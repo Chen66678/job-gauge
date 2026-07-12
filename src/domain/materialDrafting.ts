@@ -1,0 +1,181 @@
+import type { JobPosting, MaterialPreview, ProfileFact, RequirementResult, ScoreResult, UserProfile } from "../types";
+import type { OpenAiCompatibleLlmClient } from "./llmClient";
+import { getConfirmedFacts, toFactTrace } from "./facts";
+
+interface MaterialDraftEnvelope {
+  greeting: string;
+  resumeLines: MaterialDraftLine[];
+}
+
+interface MaterialDraftLine {
+  text: string;
+  factIds: string[];
+}
+
+const MATERIAL_DRAFTING_SYSTEM_PROMPT = [
+  "You draft tailored application materials from confirmed facts and return json.",
+  "You may only reorganize or restate the provided confirmed facts to better fit the job.",
+  "Do not invent any experience, skill, project, metric, duration, employer, tool, or company.",
+  "Every resume line must be traceable to the provided confirmed fact ids only.",
+  "factIds may only reference the exact confirmed fact ids provided in the input.",
+  "If a job requirement lacks confirmed fact support, do not write content for it.",
+  "The greeting must be short, in Chinese, and based only on real confirmed match points.",
+  "Do not exaggerate or claim unsupported ability.",
+  'Return json with exactly this shape: {"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
+  "Do not return markdown. Do not return prose. Return json only."
+].join("\n");
+
+export async function draftApplicationMaterial(input: {
+  profile: UserProfile;
+  job: JobPosting;
+  scoreResult: ScoreResult;
+  client: OpenAiCompatibleLlmClient;
+}): Promise<MaterialPreview> {
+  const confirmedFacts = getConfirmedFacts(input.profile);
+  if (confirmedFacts.length === 0) {
+    return {
+      status: "blocked",
+      greeting: "",
+      resumeLines: [],
+      usedFacts: [],
+      blockedFacts: [],
+      guardrailNotes: ["无已确认事实,无法生成材料。"]
+    };
+  }
+
+  const raw = await input.client.completeText({
+    system: MATERIAL_DRAFTING_SYSTEM_PROMPT,
+    user: buildDraftingUserPrompt(input.job, input.scoreResult.breakdown.requirements, confirmedFacts),
+    responseFormatJson: true
+  });
+
+  const parsed = parseDraftEnvelope(raw);
+  if (!parsed) {
+    return {
+      status: "blocked",
+      greeting: "",
+      resumeLines: [],
+      usedFacts: [],
+      blockedFacts: [],
+      guardrailNotes: ["材料生成失败: 模型返回无法解析,请稍后重试。"]
+    };
+  }
+
+  const confirmedFactById = new Map(confirmedFacts.map((fact) => [fact.id, fact] as const));
+  let droppedLineCount = 0;
+
+  const keptLines = parsed.resumeLines.flatMap((line) => {
+    const text = line.text.trim();
+    const factIds = unique(line.factIds.filter((factId) => confirmedFactById.has(factId)));
+    if (!text || factIds.length === 0) {
+      droppedLineCount += 1;
+      return [];
+    }
+    return [{ text, factIds }];
+  });
+
+  const usedFacts = unique(keptLines.flatMap((line) => line.factIds))
+    .map((factId) => confirmedFactById.get(factId))
+    .filter(isProfileFact)
+    .map(toFactTrace);
+
+  const unsupportedRequirements = input.scoreResult.breakdown.requirements.filter((item) => item.matchedFactIds.length === 0);
+  const guardrailNotes = [
+    ...unsupportedRequirements.map((item) => `${item.label}无确认事实支撑,未纳入材料。`),
+    ...(droppedLineCount > 0 ? [`已丢弃 ${droppedLineCount} 行无溯源材料表达。`] : []),
+    "打招呼语需用户发送前自查,确认未引入确认事实之外的硬信息。"
+  ];
+
+  const status = resolveMaterialStatus(keptLines.length, guardrailNotes.length);
+
+  return {
+    status,
+    greeting: parsed.greeting.trim(),
+    resumeLines: keptLines.map((line) => line.text),
+    usedFacts,
+    blockedFacts: [],
+    guardrailNotes
+  };
+}
+
+function buildDraftingUserPrompt(job: JobPosting, requirements: RequirementResult[], confirmedFacts: ProfileFact[]): string {
+  return JSON.stringify(
+    {
+      job: {
+        title: job.title,
+        company: job.company,
+        requirements: requirements.map((item) => ({
+          requirementId: item.requirementId,
+          label: item.label,
+          evidence: item.evidence,
+          matchedFactIds: item.matchedFactIds
+        }))
+      },
+      confirmedFacts: confirmedFacts.map((fact) => ({
+        id: fact.id,
+        category: fact.category,
+        label: fact.label,
+        value: fact.value
+      }))
+    },
+    null,
+    2
+  );
+}
+
+function parseDraftEnvelope(raw: string): MaterialDraftEnvelope | null {
+  const normalized = raw.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const withoutFence = stripMarkdownFence(normalized);
+
+  let value: unknown;
+  try {
+    value = JSON.parse(withoutFence);
+  } catch {
+    return null;
+  }
+
+  if (!isRecord(value) || typeof value.greeting !== "string" || !Array.isArray(value.resumeLines)) {
+    return null;
+  }
+
+  return {
+    greeting: value.greeting,
+    resumeLines: value.resumeLines
+      .filter((item): item is Record<string, unknown> => isRecord(item))
+      .map((item) => ({
+        text: typeof item.text === "string" ? item.text : "",
+        factIds: Array.isArray(item.factIds) ? item.factIds.filter((factId): factId is string => typeof factId === "string") : []
+      }))
+  };
+}
+
+function resolveMaterialStatus(lineCount: number, guardrailCount: number): MaterialPreview["status"] {
+  if (lineCount === 0) {
+    return "blocked";
+  }
+  if (guardrailCount > 1) {
+    return "needs_review";
+  }
+  return "ready";
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
+}
+
+function stripMarkdownFence(value: string): string {
+  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return match?.[1]?.trim() ?? value;
+}
+
+function isProfileFact(fact: ProfileFact | undefined): fact is ProfileFact {
+  return Boolean(fact);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}

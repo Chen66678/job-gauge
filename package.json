@@ -1,0 +1,36 @@
+{
+  "name": "boss-local-job-radar",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local-first BOSS job radar: read-only observation, local scoring, search suggestions, and tailored materials.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "electron:dev": "ELECTRON_RENDERER_URL=http://127.0.0.1:5173 electron electron/main.cjs",
+    "electron:start": "npm run build && electron electron/main.cjs",
+    "smoke": "tsx scripts/llm-smoke.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "check": "npm run test && npm run build",
+    "verify:electron": "node scripts/verify-electron-scaffold.mjs",
+    "verify:browser-extension": "node scripts/verify-browser-extension-readonly-boundary.mjs",
+    "verify:release": "npm run verify:browser-extension && node -e \"const fs=require('node:fs'); const docs=['README.md','SECURITY.md','CONTRIBUTING.md','RELEASE.md','ROADMAP.md','LICENSE','.github/ISSUE_TEMPLATE/bug_report.md','.github/ISSUE_TEMPLATE/feature_request.md','.github/pull_request_template.md']; const shots=[['screenshots/team065-release-readiness-overview-1440x900.png',1440,900],['screenshots/team065-release-readiness-privacy-1280x800.png',1280,800],['screenshots/team065-release-readiness-narrow-900x700.png',900,700]]; const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const failures=[]; for (const path of docs) if (!fs.existsSync(path)) failures.push('missing '+path); for (const script of ['dev','test','build','check','verify:browser-extension','verify:release']) if (!pkg.scripts?.[script]) failures.push('missing script '+script); function pngSize(buffer){ if (buffer.length<24 || buffer.toString('ascii',1,4)!=='PNG') return null; return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }; } for (const [path,w,h] of shots) { if (!fs.existsSync(path)) { failures.push('missing '+path); continue; } const size=pngSize(fs.readFileSync(path)); if (!size) failures.push('not png '+path); else if (size.width!==w || size.height!==h) failures.push('bad size '+path+' '+size.width+'x'+size.height); } if (failures.length) { console.error(failures.join('\\n')); process.exit(1); } console.log('release verification passed');\""
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "electron": "^42.5.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0",
+    "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.3.2",
+    "@vitejs/plugin-react": "^4.7.0",
+    "antd": "^6.5.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}
