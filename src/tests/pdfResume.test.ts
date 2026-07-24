@@ -1,0 +1,84 @@
+// @vitest-environment jsdom
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const { getDocument, destroy } = vi.hoisted(() => ({
+  getDocument: vi.fn(),
+  destroy: vi.fn(async () => undefined),
+}))
+
+vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
+  getDocument,
+  GlobalWorkerOptions: {},
+}))
+
+import { extractPdfResume, hasUsablePdfText, normalizePdfText } from '../domain/pdfResume'
+
+function createPdfFile(): File {
+  return {
+    arrayBuffer: vi.fn(async () => new ArrayBuffer(0)),
+  } as unknown as File
+}
+
+function createPage(items: Array<{ str: string; hasEOL?: boolean }>) {
+  return {
+    getTextContent: vi.fn(async () => ({ items })),
+    getViewport: vi.fn(() => ({ width: 600, height: 800 })),
+    render: vi.fn(() => ({ promise: Promise.resolve() })),
+  }
+}
+
+afterEach(() => {
+  getDocument.mockReset()
+  destroy.mockClear()
+  vi.restoreAllMocks()
+})
+
+describe('pdfResume', () => {
+  it('normalizes text and requires at least 40 letter or number characters for a usable text layer', () => {
+    expect(normalizePdfText('  产品经理\t\t\n\n\n负责平台  ')).toBe('产品经理\n\n负责平台')
+    expect(hasUsablePdfText('联系方式：13800138000')).toBe(false)
+    expect(hasUsablePdfText('产品经理负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。')).toBe(true)
+  })
+
+  it('extracts a real text layer as clean text without rendering PDF pages', async () => {
+    const page = createPage([
+      { str: '张三', hasEOL: true },
+      { str: '产品经理', hasEOL: true },
+      { str: '负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。', hasEOL: true },
+    ])
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, getPage: vi.fn(async () => page) }),
+      destroy,
+    })
+
+    await expect(extractPdfResume(createPdfFile())).resolves.toEqual({
+      kind: 'text',
+      resumeText: '张三\n产品经理\n负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。',
+    })
+    expect(page.render).not.toHaveBeenCalled()
+    expect(destroy).toHaveBeenCalledOnce()
+  })
+
+  it('renders a textless PDF to PNG for the image OCR fallback', async () => {
+    const page = createPage([])
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({ numPages: 1, getPage: vi.fn(async () => page) }),
+      destroy,
+    })
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      fillStyle: '',
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D)
+    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,rendered-pdf-page')
+
+    await expect(extractPdfResume(createPdfFile())).resolves.toEqual({
+      kind: 'image',
+      imageBase64: 'rendered-pdf-page',
+      mimeType: 'image/png',
+    })
+    expect(page.render).toHaveBeenCalledOnce()
+    expect(destroy).toHaveBeenCalledOnce()
+  })
+})

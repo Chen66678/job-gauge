@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FactStatus, MaterialPreview, ProfileFact } from './types'
 import { OUTPUT_GATE_RELEASED } from './outputGateRelease'
+import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 
 export type WorkflowStep =
   | 'UPLOAD_RESUME'
@@ -385,7 +386,7 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
     URL.revokeObjectURL(url)
   })
 
-  const fileSelected = (file: File | undefined) => {
+  const fileSelected = async (file: File | undefined) => {
     if (!file) return
     if (file.type.startsWith('image/')) {
       const reader = new FileReader()
@@ -397,7 +398,23 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
       reader.readAsDataURL(file)
       return
     }
-    file.text().then(text => setResumeText(text)).catch(reason => setError(formatError(reason)))
+    try {
+      if (isPdfFile(file)) {
+        const extracted = await extractPdfResume(file)
+        if (extracted.kind === 'text') {
+          setResumeText(extracted.resumeText)
+          setResumeImage(null)
+        } else {
+          setResumeText('')
+          setResumeImage({ base64: extracted.imageBase64, mimeType: extracted.mimeType })
+        }
+        return
+      }
+      setResumeText(await file.text())
+      setResumeImage(null)
+    } catch (reason) {
+      setError(formatError(reason))
+    }
   }
 
   const stepIndex = STEPS.findIndex(item => item.id === step)

@@ -3,6 +3,14 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const { extractPdfResume, isPdfFile } = vi.hoisted(() => ({
+  extractPdfResume: vi.fn(),
+  isPdfFile: vi.fn(),
+}))
+
+vi.mock('../domain/pdfResume', () => ({ extractPdfResume, isPdfFile }))
+
 import {
   continueAfterFactConfirmationForWorkflow,
   default as WorkflowPage,
@@ -17,6 +25,8 @@ import type { FactStatus, ProfileFact } from '../types'
 
 afterEach(() => {
   cleanup()
+  extractPdfResume.mockReset()
+  isPdfFile.mockReset()
 })
 
 function buildFact(id: string, status: FactStatus = 'unconfirmed'): ProfileFact {
@@ -77,6 +87,54 @@ const questions: FollowUpQuestion[] = [
 ]
 
 describe('WorkflowPage state machine', () => {
+  function createResumeUploadApi() {
+    return {
+      getState: vi.fn(async () => ({ factLibrary: [], jobs: [buildJob()] })),
+      ingestResume: vi.fn(async () => []),
+      buildResumeFollowUps: vi.fn(async () => []),
+    } as unknown as WorkflowApi
+  }
+
+  async function selectResumeFile(file: File) {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+  }
+
+  it('sends PDF text-layer content through the existing text ingestion path', async () => {
+    const api = createResumeUploadApi()
+    window.coreApi = api as unknown as typeof window.coreApi
+    isPdfFile.mockReturnValue(true)
+    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理\n负责招聘平台项目。' })
+
+    render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
+    await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
+    await waitFor(() => expect((screen.getByPlaceholderText('粘贴简历文本') as HTMLTextAreaElement).value).toBe('张三\n产品经理\n负责招聘平台项目。'))
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+
+    await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({
+      kind: 'text',
+      resumeText: '张三\n产品经理\n负责招聘平台项目。',
+    }))
+  })
+
+  it('sends a textless PDF rasterization through the existing image OCR path', async () => {
+    const api = createResumeUploadApi()
+    window.coreApi = api as unknown as typeof window.coreApi
+    isPdfFile.mockReturnValue(true)
+    extractPdfResume.mockResolvedValue({ kind: 'image', imageBase64: 'rendered-pdf-page', mimeType: 'image/png' })
+
+    render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
+    await selectResumeFile(new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' }))
+    await waitFor(() => expect(extractPdfResume).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+
+    await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({
+      kind: 'image',
+      imageBase64: 'rendered-pdf-page',
+      mimeType: 'image/png',
+    }))
+  })
+
   it('re-evaluates an already scored job after initial fact confirmation', async () => {
     const { api, reevaluateJob } = createStatefulApi({ factLibrary: [buildFact('resume-fact', 'confirmed')], jobs: [buildJob()] })
 
