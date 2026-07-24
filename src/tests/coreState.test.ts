@@ -88,7 +88,10 @@ function buildJobRecord(): CoreJobRecord {
       jdText: "负责 React 开发。",
       requirements: [],
       risks: [],
-      reviewFlags: []
+      reviewFlags: [],
+      pinned: false,
+      workAddress: null,
+      sourceUrl: null
     },
     evaluation: {
       vetoed: false,
@@ -108,6 +111,7 @@ function buildJobRecord(): CoreJobRecord {
         reviewFlags: []
       }
     },
+    evaluationError: null,
     followUps: [],
     material: null,
     updatedAt: "2026-07-07T00:00:00.000Z"

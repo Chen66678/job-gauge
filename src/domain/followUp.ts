@@ -9,6 +9,19 @@ export interface FollowUpQuestion {
   rationale: string;
 }
 
+/** 简历阶段反问不绑定具体岗位，用这个占位值填充 requirementId（复用 FollowUpQuestion 结构与 ingestFollowUpAnswers）。 */
+export const RESUME_FOLLOW_UP_REQUIREMENT_ID = "resume-refine";
+
+/** 0.1 可选减负：明显否定就不调 LLM，省一次请求。不是红线防线，不追求准确率。
+ * 语义级否定判断留给 0.3 内容评测域。这里宁可漏检（放行调 LLM），
+ * 因为真正的红线闸门在下面：LLM 只能提炼“明确肯定”内容，提炼不出就不产生 fact。
+ */
+export function isNegativeResponse(userAnswer: string): boolean {
+  const normalized = userAnswer.trim().toLocaleLowerCase();
+  const obviousNegatives = ["没有", "没做过", "不会", "不曾", "从未", "no", "not", "never", "haven't", "hasn't"];
+  return obviousNegatives.some((word) => normalized.includes(word));
+}
+
 interface FollowUpQuestionEnvelope {
   questions: FollowUpQuestionItem[];
 }
@@ -33,6 +46,25 @@ interface FollowUpFactItem {
 }
 
 const DEFAULT_MAX_QUESTIONS = 5;
+
+// 简历阶段反问：为整个人建库，题量高于岗位缺口反问。
+const RESUME_MIN_QUESTIONS = 5;
+const RESUME_MAX_QUESTIONS = 10;
+const RESUME_DEFAULT_QUESTIONS = 8;
+
+const RESUME_FOLLOW_UP_QUESTION_SYSTEM_PROMPT = [
+  "You generate follow-up questions to refine a candidate's resume-derived fact library and return json.",
+  "Input is a list of facts already extracted from the resume. Your job is to find what is vague, incomplete, or worth deepening.",
+  "Ask about: ambiguous responsibility boundaries (what the candidate personally did vs. team/AI), the exact meaning behind numbers or metrics, real depth of a listed skill, project status (shipped/used/tested vs. planned), and scope of experience.",
+  "Prefer questions that turn a thin resume line into a verifiable, specific fact.",
+  "Do not invent facts, experience, or details the candidate did not provide.",
+  "Questions must be open and non-leading. Never pressure the candidate to claim experience they may not have.",
+  "Use Chinese for every question.",
+  'Always include exactly one open catch-all question near the end asking whether there is relevant experience, project, or skill NOT written on the resume.',
+  'For every question use kind "explore".',
+  'Return json with exactly this shape: {"questions":[{"kind":"explore","question":"...","rationale":"..."}]}',
+  "Do not return markdown. Do not return prose. Return json only."
+].join("\n");
 
 const FOLLOW_UP_QUESTION_SYSTEM_PROMPT = [
   "You generate follow-up questions for missing job-match evidence and return json.",
@@ -108,6 +140,47 @@ export async function generateFollowUpQuestions(input: {
   }).slice(0, limit);
 }
 
+export async function generateResumeFollowUpQuestions(input: {
+  facts: ProfileFact[];
+  client: OpenAiCompatibleLlmClient;
+  maxQuestions?: number;
+}): Promise<FollowUpQuestion[]> {
+  const sourceFacts = input.facts.filter((fact) => fact.status !== "rejected");
+  if (sourceFacts.length === 0) {
+    return [];
+  }
+
+  const limit = normalizeResumeMaxQuestions(input.maxQuestions);
+  const raw = await input.client.completeText({
+    system: RESUME_FOLLOW_UP_QUESTION_SYSTEM_PROMPT,
+    user: buildResumeQuestionUserPrompt(sourceFacts, limit),
+    responseFormatJson: true
+  });
+
+  const parsed = parseQuestionEnvelope(raw, { requireRequirementId: false });
+  if (!parsed) {
+    return [];
+  }
+
+  return parsed.questions.flatMap((item, index) => {
+    const question = item.question.trim();
+    const rationale = item.rationale.trim();
+    if (!question || !rationale) {
+      return [];
+    }
+
+    return [
+      {
+        id: buildQuestionId({ requirementId: RESUME_FOLLOW_UP_REQUIREMENT_ID, question }, index),
+        requirementId: RESUME_FOLLOW_UP_REQUIREMENT_ID,
+        kind: "explore",
+        question,
+        rationale
+      } satisfies FollowUpQuestion
+    ];
+  }).slice(0, limit);
+}
+
 export async function ingestFollowUpAnswers(input: {
   questions: FollowUpQuestion[];
   answers: { questionId: string; answerText: string }[];
@@ -128,9 +201,14 @@ export async function ingestFollowUpAnswers(input: {
     return [];
   }
 
+  const affirmativeAnswers = pairedAnswers.filter((item) => !isNegativeResponse(item.answerText));
+  if (affirmativeAnswers.length === 0) {
+    return [];
+  }
+
   const raw = await input.client.completeText({
     system: FOLLOW_UP_ANSWER_SYSTEM_PROMPT,
-    user: buildAnswerUserPrompt(pairedAnswers),
+    user: buildAnswerUserPrompt(affirmativeAnswers),
     responseFormatJson: true
   });
 
@@ -206,7 +284,11 @@ function buildAnswerUserPrompt(items: Array<{ question: FollowUpQuestion; answer
   );
 }
 
-function parseQuestionEnvelope(raw: string): FollowUpQuestionEnvelope | null {
+function parseQuestionEnvelope(
+  raw: string,
+  options?: { requireRequirementId?: boolean }
+): FollowUpQuestionEnvelope | null {
+  const requireRequirementId = options?.requireRequirementId ?? true;
   const normalized = raw.trim();
   if (!normalized) {
     return null;
@@ -229,8 +311,9 @@ function parseQuestionEnvelope(raw: string): FollowUpQuestionEnvelope | null {
     questions: value.questions
       .filter((item): item is Record<string, unknown> => isRecord(item))
       .map((item) => ({
-        requirementId: item.requirementId,
-        kind: item.kind,
+        // 简历阶段模型不返回 requirementId/kind，用占位值补齐，统一走同一校验/结构。
+        requirementId: requireRequirementId ? item.requirementId : item.requirementId ?? RESUME_FOLLOW_UP_REQUIREMENT_ID,
+        kind: requireRequirementId ? item.kind : normalizeExploreKind(item.kind),
         question: item.question,
         rationale: item.rationale
       }))
@@ -288,7 +371,33 @@ function normalizeMaxQuestions(value: number | undefined): number {
   return value;
 }
 
-function buildQuestionId(item: FollowUpQuestionItem, index: number): string {
+function normalizeExploreKind(kind: unknown): FollowUpQuestion["kind"] {
+  return kind === "probe" ? "probe" : "explore";
+}
+
+function normalizeResumeMaxQuestions(value: number | undefined): number {
+  if (!Number.isInteger(value) || !value || value < 1) {
+    return RESUME_DEFAULT_QUESTIONS;
+  }
+  return Math.min(RESUME_MAX_QUESTIONS, Math.max(RESUME_MIN_QUESTIONS, value));
+}
+
+function buildResumeQuestionUserPrompt(facts: ProfileFact[], limit: number): string {
+  return JSON.stringify(
+    {
+      instruction: `Generate between ${RESUME_MIN_QUESTIONS} and ${limit} refinement questions. Include exactly one open catch-all question about experience not on the resume.`,
+      resumeFacts: facts.map((fact) => ({
+        category: fact.category,
+        label: fact.label,
+        value: fact.value
+      }))
+    },
+    null,
+    2
+  );
+}
+
+function buildQuestionId(item: { requirementId: string; question: string }, index: number): string {
   const slug = slugify(`${item.requirementId}-${item.question}`);
   return `followup-q-${index + 1}-${slug}`;
 }

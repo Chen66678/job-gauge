@@ -159,7 +159,10 @@ export const sampleJobs: JobPosting[] = [
         evidence: "JD 提到多项产品职责，需要面试时确认节奏和导师投入。"
       }
     ],
-    reviewFlags: ["确认团队是否有应届培养机制"]
+    reviewFlags: ["确认团队是否有应届培养机制"],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
   },
   {
     id: "job-generic",
@@ -205,7 +208,10 @@ export const sampleJobs: JobPosting[] = [
       }
     ],
     risks: [],
-    reviewFlags: []
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
   },
   {
     id: "job-skip",
@@ -248,6 +254,9 @@ export const sampleJobs: JobPosting[] = [
         evidence: "薪资 6-9K，低于 12K 底线。"
       }
     ],
-    reviewFlags: ["触发排除关键词：培训", "岗位职责与前端目标不一致"]
+    reviewFlags: ["触发排除关键词：培训", "岗位职责与前端目标不一致"],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
   }
 ];

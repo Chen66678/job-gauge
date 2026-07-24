@@ -1,6 +1,128 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button, Popover, Input, Tooltip } from 'antd'
-import { MOCK_JOBS, MockJob } from './mockData'
+
+type MockJob = {
+  id: string
+  title: string
+  company: string
+  city: string
+  salary: string
+  commute?: string
+  companyTags: string[]
+  coreMatch?: { label: string; pct: number }
+  risks: string[]
+  gaps: string[]
+  score: number | null
+  scoreTier: 'high' | 'mid' | 'low' | 'pending' | 'queued' | 'unevaluated'
+  strategyLabel: string
+  strategyClass: 'recommend' | 'suggest' | 'consider' | 'skip'
+  pinned: boolean
+  skills: { label: string; pct: number | null; confident: boolean; question?: string }[]
+  jdSummary: string[]
+  requirements: string[]
+  industry: string
+  workAddress: string | null
+  sourceUrl: string | null
+  evaluationError: string | null
+  jdText: string
+  salaryK: [number, number]
+}
+
+type CoreState = {
+  jobs: Array<{
+    job: {
+      id: string
+      title: string
+      company: string
+      city: string
+      salaryK: [number, number]
+      companyTags: string[]
+      jdText: string
+      requirements: Array<{ label: string; evidence: string; requiredFactIds: string[] }>
+      risks: Array<{ label: string; evidence: string }>
+      pinned: boolean
+      workAddress: string | null
+      sourceUrl: string | null
+    }
+    evaluation: {
+      vetoed: true
+      vetoRuleLabel: string
+    } | {
+      vetoed: false
+      score: {
+        total: number
+        strategyLabel: string
+        strategy: string
+        gaps: string[]
+        risks: string[]
+        breakdown: { requirements: Array<{ label: string; score: number; maxScore: number; gap: string | null }> }
+      }
+    } | null
+    evaluationError: string | null
+  }>
+}
+
+declare global {
+  interface Window {
+    coreApi: {
+      getState: () => Promise<CoreState>
+      setJobPinned: (jobId: string, pinned: boolean) => Promise<void>
+      onStateChanged: (listener: (state: CoreState) => void) => () => void
+      evaluateJobFromJd: (input: {
+        jdText: string
+        jobBase: {
+          title: string
+          company: string
+          city: string
+          salaryK: [number, number]
+          companyTags: string[]
+          workAddress?: string | null
+          sourceUrl?: string | null
+        }
+      }) => Promise<unknown>
+    }
+  }
+}
+
+function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
+  const evaluation = record.evaluation
+  const score = evaluation && !evaluation.vetoed ? evaluation.score.total : null
+  const scoreResult = evaluation && !evaluation.vetoed ? evaluation.score : null
+  const strategy = scoreResult?.strategy
+  const strategyClass = strategy === 'personalize' ? 'recommend' : strategy === 'generic_apply' ? 'suggest' : strategy === 'skip' ? 'skip' : 'consider'
+  const scoreTier = record.evaluationError ? 'low' : score === null ? (evaluation ? 'low' : 'unevaluated') : score >= 80 ? 'high' : score >= 70 ? 'mid' : 'low'
+  const requirements = record.job.requirements
+  const requirementResults = scoreResult?.breakdown.requirements ?? []
+
+  return {
+    id: record.job.id,
+    title: record.job.title,
+    company: record.job.company,
+    city: record.job.city,
+    salary: `${record.job.salaryK[0]}-${record.job.salaryK[1]}k`,
+    companyTags: record.job.companyTags,
+    risks: scoreResult?.risks ?? record.job.risks.map(risk => risk.label),
+    gaps: scoreResult?.gaps ?? [],
+    score,
+    scoreTier,
+    strategyLabel: record.evaluationError ? '评估失败' : (scoreResult?.strategyLabel ?? '尚未评估'),
+    strategyClass,
+    pinned: record.job.pinned,
+    skills: requirements.map(requirement => {
+      const result = requirementResults.find(item => item.label === requirement.label)
+      const pct = result && result.maxScore > 0 ? Math.round(result.score / result.maxScore * 100) : null
+      return { label: requirement.label, pct, confident: Boolean(result && !result.gap), question: requirement.evidence }
+    }),
+    jdSummary: record.job.jdText ? [record.job.jdText] : [],
+    requirements: requirements.map(requirement => requirement.label),
+    industry: '',
+    workAddress: record.job.workAddress,
+    sourceUrl: record.job.sourceUrl,
+    evaluationError: record.evaluationError,
+    jdText: record.job.jdText,
+    salaryK: record.job.salaryK
+  }
+}
 
 // ─── Strategy Slider ─────────────────────────────────────────────
 const STRATEGIES = ['全量打分', '只评命中', '手动打分'] as const
@@ -151,7 +273,7 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
 )
 
 // ─── Expanded Detail Panel ───────────────────────────────────────
-function ExpandPanel({ job, open }: { job: MockJob; open: boolean }) {
+function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
   const [pendingAnswers, setPendingAnswers] = useState<Record<string, string>>({})
   const [answeredSkills, setAnsweredSkills] = useState<Record<string, number>>({})
   const [popoverOpen, setPopoverOpen] = useState<string | null>(null)
@@ -169,6 +291,13 @@ function ExpandPanel({ job, open }: { job: MockJob; open: boolean }) {
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
       <div className="expand-inner">
+
+        {job.evaluationError && (
+          <div className="evaluation-error-banner">
+            <span>评估失败：{job.evaluationError}</span>
+            <Button size="small" onClick={() => onRetry?.(job.id)}>重试</Button>
+          </div>
+        )}
 
         <div className="decision-overview">
           {/* Evidence first: the score should read like a grounded explanation,
@@ -297,6 +426,7 @@ function ExpandPanel({ job, open }: { job: MockJob; open: boolean }) {
             {job.industry && <span style={{ color: 'var(--text-muted)' }}>{job.industry}</span>}
             {job.commute && <span>通勤 {job.commute}</span>}
             <span>{job.salary}</span>
+            {job.workAddress && <span>{job.workAddress}</span>}
             {job.sourceUrl ? (
               <a
                 className="meta-link"
@@ -318,7 +448,8 @@ function ExpandPanel({ job, open }: { job: MockJob; open: boolean }) {
         <div className="expand-actions">
           <Button size="small">暂不考虑</Button>
           <Button size="small" type="primary"
-            style={{ background: 'var(--accent)', borderColor: 'var(--accent)' }}>
+            style={{ background: 'var(--accent)', borderColor: 'var(--accent)' }}
+            onClick={() => onStartWorkflow?.(job.id)}>
             定制简历
           </Button>
         </div>
@@ -330,12 +461,14 @@ function ExpandPanel({ job, open }: { job: MockJob; open: boolean }) {
 
 // ─── Job Row ──────────────────────────────────────────────────────
 function JobRow({
-  job, expanded, onToggle, onPin
+  job, expanded, onToggle, onPin, onStartWorkflow, onRetry
 }: {
   job: MockJob
   expanded: boolean
   onToggle: () => void
   onPin: () => void
+  onStartWorkflow?: (jobId: string) => void
+  onRetry?: (jobId: string) => void
 }) {
   const isPending = job.scoreTier === 'pending' || job.scoreTier === 'queued'
 
@@ -410,18 +543,43 @@ function JobRow({
         {!isPending && <ChevronIcon open={expanded} />}
       </div>
 
-      <ExpandPanel job={job} open={expanded} />
+      <ExpandPanel job={job} open={expanded} onStartWorkflow={onStartWorkflow} onRetry={onRetry} />
     </div>
   )
 }
 
 // ─── Job List Page ────────────────────────────────────────────────
-export default function JobListPage() {
-  const [jobs, setJobs] = useState<MockJob[]>(MOCK_JOBS)
+export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jobId: string) => void }) {
+  const [jobs, setJobs] = useState<MockJob[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>('1')
   const [strategy, setStrategy] = useState(1) // 0=全量, 1=只评命中, 2=手动
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'salary'>('score')
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+
+  useEffect(() => {
+    let active = true
+    window.coreApi.getState()
+      .then(state => {
+        if (!active) return
+        setJobs(state.jobs.map(toDisplayJob))
+        setLoading(false)
+      })
+      .catch(reason => {
+        if (!active) return
+        setError(reason instanceof Error ? reason.message : String(reason))
+        setLoading(false)
+      })
+
+    const unsubscribe = window.coreApi.onStateChanged(state => {
+      if (!active) return
+      setJobs(state.jobs.map(toDisplayJob))
+      setLoading(false)
+    })
+
+    return () => { active = false; unsubscribe() }
+  }, [])
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId(prev => {
@@ -444,7 +602,37 @@ export default function JobListPage() {
   }, [])
 
   const togglePin = useCallback((id: string) => {
-    setJobs(prev => prev.map(j => j.id === id ? { ...j, pinned: !j.pinned } : j))
+    setJobs(prev => {
+      const target = prev.find(j => j.id === id)
+      if (!target) return prev
+      const nextPinned = !target.pinned
+      window.coreApi.setJobPinned(id, nextPinned).catch(reason => {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      })
+      return prev.map(j => j.id === id ? { ...j, pinned: nextPinned } : j)
+    })
+  }, [])
+
+  const handleRetry = useCallback((id: string) => {
+    setJobs(prev => {
+      const target = prev.find(j => j.id === id)
+      if (!target) return prev
+      window.coreApi.evaluateJobFromJd({
+        jdText: target.jdText,
+        jobBase: {
+          title: target.title,
+          company: target.company,
+          city: target.city,
+          salaryK: target.salaryK,
+          companyTags: target.companyTags,
+          workAddress: target.workAddress,
+          sourceUrl: target.sourceUrl
+        }
+      }).catch(reason => {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      })
+      return prev
+    })
   }, [])
 
   // Split pinned / normal
@@ -455,7 +643,7 @@ export default function JobListPage() {
     const m = s.match(/(\d+)-(\d+)/)
     return m ? parseInt(m[2]) : 0
   }
-  const originalIdx = (id: string) => MOCK_JOBS.findIndex(j => j.id === id)
+  const originalIdx = (id: string) => jobs.findIndex(j => j.id === id)
 
   const normal = jobs.filter(j => !j.pinned).sort((a, b) => {
     // Always push pending/queued/unevaluated to bottom
@@ -472,6 +660,9 @@ export default function JobListPage() {
   })
 
   const evaluatingCount = jobs.filter(j => j.scoreTier === 'pending').length
+
+  if (loading) return <div>加载中...</div>
+  if (error) return <div>加载失败: {error}</div>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -509,6 +700,8 @@ export default function JobListPage() {
                   expanded={expandedId === job.id}
                   onToggle={() => toggleExpand(job.id)}
                   onPin={() => togglePin(job.id)}
+                  onStartWorkflow={onStartWorkflow}
+                  onRetry={handleRetry}
                 />
               </div>
             ))}
@@ -533,6 +726,11 @@ export default function JobListPage() {
         </div>
 
         {/* ── Normal section ── */}
+        {normal.length === 0 && pinned.length === 0 && (
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-2)' }}>
+            暂无岗位，请先通过插件发送岗位，或手动添加
+          </div>
+        )}
         {normal.map(job => (
           <div key={job.id} ref={el => { rowRefs.current[job.id] = el }}>
             <JobRow
@@ -540,6 +738,8 @@ export default function JobListPage() {
               expanded={expandedId === job.id}
               onToggle={() => toggleExpand(job.id)}
               onPin={() => togglePin(job.id)}
+              onStartWorkflow={onStartWorkflow}
+              onRetry={handleRetry}
             />
           </div>
         ))}

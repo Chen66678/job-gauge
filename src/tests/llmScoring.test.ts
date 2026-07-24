@@ -65,6 +65,9 @@ function buildJob(overrides: Partial<JobPosting> = {}): JobPosting {
     requirements: [],
     risks: [],
     reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null,
     ...overrides
   };
 }

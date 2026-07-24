@@ -18,9 +18,12 @@
     "verify:release": "npm run verify:browser-extension && node -e \"const fs=require('node:fs'); const docs=['README.md','SECURITY.md','CONTRIBUTING.md','RELEASE.md','ROADMAP.md','LICENSE','.github/ISSUE_TEMPLATE/bug_report.md','.github/ISSUE_TEMPLATE/feature_request.md','.github/pull_request_template.md']; const shots=[['screenshots/team065-release-readiness-overview-1440x900.png',1440,900],['screenshots/team065-release-readiness-privacy-1280x800.png',1280,800],['screenshots/team065-release-readiness-narrow-900x700.png',900,700]]; const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const failures=[]; for (const path of docs) if (!fs.existsSync(path)) failures.push('missing '+path); for (const script of ['dev','test','build','check','verify:browser-extension','verify:release']) if (!pkg.scripts?.[script]) failures.push('missing script '+script); function pngSize(buffer){ if (buffer.length<24 || buffer.toString('ascii',1,4)!=='PNG') return null; return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) }; } for (const [path,w,h] of shots) { if (!fs.existsSync(path)) { failures.push('missing '+path); continue; } const size=pngSize(fs.readFileSync(path)); if (!size) failures.push('not png '+path); else if (size.width!==w || size.height!==h) failures.push('bad size '+path+' '+size.width+'x'+size.height); } if (failures.length) { console.error(failures.join('\\n')); process.exit(1); } console.log('release verification passed');\""
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "electron": "^42.5.0",
+    "jsdom": "^29.1.1",
     "tsx": "^4.23.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.0",

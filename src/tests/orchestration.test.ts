@@ -73,6 +73,9 @@ function buildJob(overrides: Partial<JobPosting> = {}): JobPosting {
     requirements: [],
     risks: [],
     reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null,
     ...overrides
   };
 }
@@ -418,7 +421,9 @@ describe("orchestration", () => {
     expect(result.material).toEqual({
       status: "ready",
       greeting: "您好，我有 React 组件开发经验，想进一步了解这个岗位。",
-      resumeLines: ["负责 React 组件开发与页面交互实现。"],
+      resumeLines: [
+        { text: "负责 React 组件开发与页面交互实现。", factIds: ["fact-resume-1-技能-react"] }
+      ],
       usedFacts: [
         {
           factId: "fact-resume-1-技能-react",
@@ -448,6 +453,6 @@ describe("orchestration", () => {
       client
     });
 
-    expect(material.resumeLines).toEqual(["负责 React 组件开发。"]);
+    expect(material.resumeLines).toEqual([{ text: "负责 React 组件开发。", factIds: ["fact-react"] }]);
   });
 });

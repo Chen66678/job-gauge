@@ -32,6 +32,7 @@ export interface CorePreferences {
 export interface CoreJobRecord {
   job: JobPosting;
   evaluation: CoreEvaluation | null;
+  evaluationError: string | null;
   followUps: FollowUpQuestion[];
   material: MaterialPreview | null;
   preScreenResult?: KeywordPreScreenResult;
@@ -162,6 +163,14 @@ export function getJobRecord(state: CoreState, jobId: string): CoreJobRecord | n
   return state.jobs.find((item) => item.job.id === jobId) ?? null;
 }
 
+export function setJobPinned(state: CoreState, jobId: string, pinned: boolean): CoreState {
+  const record = getJobRecord(state, jobId);
+  if (!record || record.job.pinned === pinned) {
+    return state;
+  }
+  return upsertJobRecord(state, { ...record, job: { ...record.job, pinned } });
+}
+
 export function removeJobRecord(state: CoreState, jobId: string): CoreState {
   const nextJobs = state.jobs.filter((item) => item.job.id !== jobId);
   if (nextJobs.length === state.jobs.length) {
@@ -252,6 +261,7 @@ function isCoreJobRecord(value: unknown): value is CoreJobRecord {
     isRecord(value) &&
     isJobPosting(value.job) &&
     (value.evaluation === null || value.evaluation === undefined || isCoreEvaluation(value.evaluation)) &&
+    (value.evaluationError === null || value.evaluationError === undefined || typeof value.evaluationError === "string") &&
     Array.isArray(value.followUps) &&
     value.followUps.every(isFollowUpQuestion) &&
     (value.material === null || value.material === undefined || isMaterialPreview(value.material)) &&
@@ -320,13 +330,18 @@ function isMaterialPreview(value: unknown): value is MaterialPreview {
     isRecord(value) &&
     (value.status === "ready" || value.status === "needs_review" || value.status === "blocked") &&
     typeof value.greeting === "string" &&
-    isStringArray(value.resumeLines) &&
+    Array.isArray(value.resumeLines) &&
+    value.resumeLines.every(isResumeLine) &&
     Array.isArray(value.usedFacts) &&
     value.usedFacts.every(isFactTrace) &&
     Array.isArray(value.blockedFacts) &&
     value.blockedFacts.every(isFactTrace) &&
     isStringArray(value.guardrailNotes)
   );
+}
+
+function isResumeLine(value: unknown): boolean {
+  return isRecord(value) && typeof value.text === "string" && isStringArray(value.factIds);
 }
 
 function isFactTrace(value: unknown): boolean {
@@ -410,7 +425,10 @@ function isJobPosting(value: unknown): value is JobPosting {
     value.requirements.every(isJobRequirement) &&
     Array.isArray(value.risks) &&
     value.risks.every(isJobRisk) &&
-    isStringArray(value.reviewFlags)
+    isStringArray(value.reviewFlags) &&
+    typeof value.pinned === "boolean" &&
+    (value.workAddress === null || typeof value.workAddress === "string") &&
+    (value.sourceUrl === null || typeof value.sourceUrl === "string")
   );
 }
 

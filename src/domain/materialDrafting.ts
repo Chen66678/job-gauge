@@ -21,9 +21,18 @@ const MATERIAL_DRAFTING_SYSTEM_PROMPT = [
   "If a job requirement lacks confirmed fact support, do not write content for it.",
   "The greeting must be short, in Chinese, and based only on real confirmed match points.",
   "Do not exaggerate or claim unsupported ability.",
+  "Do not amplify the strength of any claim beyond what the fact states: 'did once' must not become 'expert in' or 'proficient in'; 'participated in' must not become 'led' or 'architected'; 'small-scale' must not become 'enterprise-scale'; never add metrics, durations, or numbers the fact does not contain.",
+  "Preserve real qualifiers from the fact (e.g. 'course project', 'with a team', 'prototype', 'offline experiment') — do not drop them to imply stronger professional experience than the fact supports.",
+  "If a line cannot be phrased faithfully without amplification, omit that line rather than soften it into a technically-true-but-misleading phrasing.",
   'Return json with exactly this shape: {"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
   "Do not return markdown. Do not return prose. Return json only."
 ].join("\n");
+
+// 0.1 粗粒度兜底，0.3 内容评测域接管精确检测：只拦截最明显的程度和角色放大词。
+const AMPLIFICATION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /精通|资深|专家级|expert in|proficient in/i, label: "程度放大词" },
+  { pattern: /主导|负责架构|架构设计|led|architected/i, label: "角色放大词（若 fact 仅为参与/协助）" }
+];
 
 export async function draftApplicationMaterial(input: {
   profile: UserProfile;
@@ -71,6 +80,16 @@ export async function draftApplicationMaterial(input: {
       droppedLineCount += 1;
       return [];
     }
+    const facts = factIds
+      .map((factId) => confirmedFactById.get(factId))
+      .filter(isProfileFact);
+    const hasUnsupportedAmplification = AMPLIFICATION_PATTERNS.some(
+      ({ pattern }) => pattern.test(text) && !facts.some((fact) => pattern.test(`${fact.label} ${fact.value}`))
+    );
+    if (hasUnsupportedAmplification) {
+      droppedLineCount += 1;
+      return [];
+    }
     return [{ text, factIds }];
   });
 
@@ -91,7 +110,7 @@ export async function draftApplicationMaterial(input: {
   return {
     status,
     greeting: parsed.greeting.trim(),
-    resumeLines: keptLines.map((line) => line.text),
+    resumeLines: keptLines,
     usedFacts,
     blockedFacts: [],
     guardrailNotes

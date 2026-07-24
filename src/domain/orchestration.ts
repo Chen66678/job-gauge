@@ -12,9 +12,15 @@ import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import { extractFactsFromResume } from "./resumeExtraction";
 import { extractRequirementsFromJd } from "./jdExtraction";
 import { type HardVetoRule, type HardVetoRules, findVetoHit, parsePreferences } from "./preferenceParsing";
-import { type FollowUpQuestion, generateFollowUpQuestions, ingestFollowUpAnswers } from "./followUp";
+import {
+  type FollowUpQuestion,
+  generateFollowUpQuestions,
+  generateResumeFollowUpQuestions,
+  ingestFollowUpAnswers
+} from "./followUp";
 import { type RiskSensitivity, scoreJobWithLlm } from "./llmScoring";
 import { draftApplicationMaterial } from "./materialDrafting";
+import { sanitizeGreeting } from "./greetingGuard";
 
 export async function ingestResume(input: {
   resume: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string };
@@ -67,6 +73,8 @@ export function assembleJobPosting(input: {
     salaryK: [number, number];
     companyTags: string[];
     jdText: string;
+    workAddress?: string | null;
+    sourceUrl?: string | null;
   };
   requirements: JobRequirement[];
   risks: JobRisk[];
@@ -81,7 +89,10 @@ export function assembleJobPosting(input: {
     jdText: input.base.jdText,
     requirements: input.requirements,
     risks: input.risks,
-    reviewFlags: []
+    reviewFlags: [],
+    pinned: false,
+    workAddress: input.base.workAddress ?? null,
+    sourceUrl: input.base.sourceUrl ?? null
   };
 }
 
@@ -116,6 +127,14 @@ export async function buildFollowUps(input: {
   return generateFollowUpQuestions(input);
 }
 
+export async function buildResumeFollowUps(input: {
+  facts: ProfileFact[];
+  client: OpenAiCompatibleLlmClient;
+  maxQuestions?: number;
+}): Promise<FollowUpQuestion[]> {
+  return generateResumeFollowUpQuestions(input);
+}
+
 export async function applyFollowUpAnswers(input: {
   questions: FollowUpQuestion[];
   answers: { questionId: string; answerText: string }[];
@@ -130,7 +149,11 @@ export async function draftMaterial(input: {
   scoreResult: ScoreResult;
   client: OpenAiCompatibleLlmClient;
 }): Promise<MaterialPreview> {
-  return draftApplicationMaterial(input);
+  const material = await draftApplicationMaterial(input);
+  return {
+    ...material,
+    greeting: sanitizeGreeting(material.greeting, input.profile.facts, [input.job.company])
+  };
 }
 
 export async function runFullChainForDemo(input: {

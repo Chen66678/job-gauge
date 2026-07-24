@@ -1,11 +1,16 @@
 import { performance } from "node:perf_hooks";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { createLlmClient } from "../src/domain/llmClient";
 import { extractFactsFromResume } from "../src/domain/resumeExtraction";
 import { extractRequirementsFromJd } from "../src/domain/jdExtraction";
 import { ingestFollowUpAnswers, type FollowUpQuestion } from "../src/domain/followUp";
 import { scoreJobWithLlm } from "../src/domain/llmScoring";
 import { draftApplicationMaterial } from "../src/domain/materialDrafting";
+import { draftMaterial as orchestrateDraftMaterial } from "../src/domain/orchestration";
 import type { JobPosting, JobRequirement, MaterialPreview, ProfileFact, RequirementResult, UserProfile } from "../src/types";
+import type { CoreState } from "../src/domain/coreState";
 
 type ProbeStatus = "PASS" | "SUSPECT" | "ERROR";
 
@@ -163,6 +168,11 @@ async function main(): Promise<void> {
     ...(baseUrl ? { baseUrl } : {})
   });
 
+  if (process.argv.includes("--probe-draft")) {
+    await runProbeDraftMode(client);
+    return;
+  }
+
   const outcomes: ProbeOutcome[] = [];
 
   outcomes.push(await runProbe("探针 1 — 打分诚实性", () => runScoringProbe(client)));
@@ -195,6 +205,97 @@ async function main(): Promise<void> {
     console.log(`- ${outcome.title}: ${outcome.status}${outcome.reasons.length > 0 ? ` | ${outcome.reasons.join(" ; ")}` : ""}`);
   }
   console.log(`- 总耗时: ${formatMs(totalElapsedMs)}`);
+}
+
+async function runProbeDraftMode(client: ReturnType<typeof createLlmClient>): Promise<void> {
+  // 从 STATE_FILE 环境变量读路径，或用 macOS 默认路径
+  const stateFilePath = process.env.STATE_FILE?.trim()
+    ?? join(homedir(), "Library", "Application Support", "BOSS Local Job Radar", "job-radar", "core-state.json");
+
+  printDivider("Gate2 probe-draft 模式 — 直调 orchestration 层");
+  console.log(`状态文件: ${stateFilePath}`);
+
+  let rawJson: string;
+  try {
+    rawJson = readFileSync(stateFilePath, "utf8");
+  } catch (err) {
+    console.log("无法读取状态文件，请先启动应用并确认至少有一个已评估的岗位。");
+    console.log(`路径: ${stateFilePath}`);
+    console.log(`错误: ${err instanceof Error ? err.message : String(err)}`);
+    console.log("提示：可以用 STATE_FILE=/path/to/core-state.json 覆盖路径。");
+    return;
+  }
+
+  // 解析 CoreState
+  let state: unknown;
+  try {
+    state = JSON.parse(rawJson);
+  } catch {
+    console.log("状态文件不是合法 JSON，请检查文件格式。");
+    return;
+  }
+
+  // 找到第一个有 evaluation 的 job
+  const jobs: unknown[] = (state as { jobs?: unknown[] })?.jobs ?? [];
+  const targetRecord = jobs.find(
+    (r): r is { job: { id: string }; evaluation: { vetoed: boolean }; followUps?: unknown[] } =>
+      typeof r === "object" && r !== null && "job" in r && "evaluation" in r
+      && (r as { evaluation: unknown }).evaluation !== null
+  );
+
+  if (!targetRecord) {
+    console.log("状态文件中没有已评估的岗位，请先通过插件发送岗位并完成评估后再运行。");
+    return;
+  }
+
+  // 检查是否被 veto（vetoed: true），如果是则无法 draft
+  const evaluation = targetRecord.evaluation as { vetoed?: boolean; vetoRuleId?: string; score?: unknown };
+  if (evaluation.vetoed === true) {
+    console.log(`目标岗位被 veto（规则: ${evaluation.vetoRuleId}），无法 draft material。`);
+    return;
+  }
+
+  const scoreResult = evaluation.score;
+  if (!scoreResult) {
+    console.log("目标岗位没有打分结果，无法 draft material。");
+    return;
+  }
+
+  const jobId = targetRecord.job.id;
+  console.log(`目标岗位 ID: ${jobId}`);
+  console.log("");
+
+  // 重建 UserProfile（从 state.factLibrary）
+  const factLibrary = (state as { factLibrary?: unknown[] })?.factLibrary ?? [];
+  const confirmedFacts = factLibrary.filter(
+    (f): f is ProfileFact =>
+      typeof f === "object" && f !== null && "id" in f && (f as { status?: unknown }).status === "confirmed"
+  );
+
+  const profile: UserProfile = {
+    id: `profile-probe-${jobId}`,
+    displayName: "Probe 模式候选人",
+    headline: "probe-draft",
+    targetRoles: [],
+    targetCities: [],
+    resumeText: "",
+    facts: confirmedFacts,
+    imageResumeAttachment: null
+  };
+
+  // 直调 orchestration 层 draftMaterial（绕过 OUTPUT_GATE_RELEASED 守卫）
+  try {
+    const result = await orchestrateDraftMaterial({
+      profile,
+      job: targetRecord.job as JobPosting,
+      scoreResult: scoreResult as ScoreResult,
+      client
+    });
+    printDivider("draft 结果（人工审核：有无不支持内容）");
+    console.log(sanitize(JSON.stringify(result, null, 2)));
+  } catch (err) {
+    console.log(`draftMaterial 调用出错: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 async function runProbe(title: string, runner: () => Promise<Omit<ProbeOutcome, "title" | "elapsedMs">>): Promise<ProbeOutcome> {

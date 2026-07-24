@@ -342,6 +342,9 @@ export interface JobPosting {
   requirements: JobRequirement[];
   risks: JobRisk[];
   reviewFlags: string[];
+  pinned: boolean;
+  workAddress: string | null;
+  sourceUrl: string | null;
 }
 
 export interface RequirementResult {
@@ -381,10 +384,15 @@ export interface FactTrace {
   source: string;
 }
 
+export interface ResumeLine {
+  text: string;
+  factIds: string[];
+}
+
 export interface MaterialPreview {
   status: "ready" | "needs_review" | "blocked";
   greeting: string;
-  resumeLines: string[];
+  resumeLines: ResumeLine[];
   usedFacts: FactTrace[];
   blockedFacts: FactTrace[];
   guardrailNotes: string[];
@@ -731,7 +739,7 @@ export interface MaterialVersion {
   strategy: Strategy;
   strategyLabel: string;
   greeting: string;
-  resumeLines: string[];
+  resumeLines: ResumeLine[];
   usedFacts: FactTrace[];
   blockedFacts: FactTrace[];
   guardrailNotes: string[];

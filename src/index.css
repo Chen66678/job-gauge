@@ -446,6 +446,20 @@ body {
   border-left: 2px solid var(--accent);
 }
 
+.evaluation-error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  color: #b91c1c;
+  font-size: 13px;
+}
+
 .decision-overview {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

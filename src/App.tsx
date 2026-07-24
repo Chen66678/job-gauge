@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Tooltip } from 'antd'
 import JobListPage from './JobListPage'
+import WorkflowPage from './WorkflowPage'
 
 type Page = 'home' | 'jobs' | 'profile' | 'settings'
 
@@ -43,6 +44,12 @@ const NAV_ITEMS = [
 
 export default function App() {
   const [page, setPage] = useState<Page>('jobs')
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+
+  const startWorkflow = (jobId: string) => {
+    setSelectedJobId(jobId)
+    setPage('home')
+  }
 
   return (
     <div className="app-layout">
@@ -81,9 +88,9 @@ export default function App() {
 
       {/* ── Main ── */}
       <main className="app-main">
-        {page === 'jobs' && <JobListPage />}
+        {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} />}
         {page === 'home' && (
-          <div style={{ padding: 40, color: 'var(--color-text-2)' }}>首页 — 待实现</div>
+          <WorkflowPage selectedJobId={selectedJobId} />
         )}
         {page === 'profile' && (
           <div style={{ padding: 40, color: 'var(--color-text-2)' }}>我的资料 — 待实现</div>

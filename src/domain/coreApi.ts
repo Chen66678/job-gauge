@@ -8,17 +8,21 @@ import {
   saveCoreState,
   setFactStatus as setCoreFactStatus,
   setFactStatusBatch as setCoreFactStatusBatch,
+  setJobPinned as setCoreJobPinned,
   setPreferences as setCorePreferences,
   upsertFacts,
   upsertJobRecord
 } from "./coreState";
 import type { FollowUpQuestion } from "./followUp";
+import { exportToMarkdown } from "./exportResume";
+import { OUTPUT_GATE_RELEASED } from "../outputGateRelease";
 import { preScreenJob as runKeywordPreScreen, type KeywordPreScreenResult } from "./jobPreScreen";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import {
   applyFollowUpAnswers as orchestrateFollowUpAnswers,
   assembleJobPosting,
   buildFollowUps as orchestrateBuildFollowUps,
+  buildResumeFollowUps as orchestrateBuildResumeFollowUps,
   draftMaterial as orchestrateDraftMaterial,
   evaluateJob,
   ingestJd,
@@ -48,6 +52,7 @@ const BATCH_DIAGNOSIS_SYSTEM_PROMPT = [
 
 export interface CoreApi {
   getState(): CoreState;
+  addManualFact(input: { content: string; category: string }): void;
   ingestResume(
     input: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string }
   ): Promise<ProfileFact[]>;
@@ -56,11 +61,27 @@ export interface CoreApi {
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
   evaluateJobFromJd(input: {
     jdText: string;
-    jobBase: { title: string; company: string; city: string; salaryK: [number, number]; companyTags: string[] };
+    jobBase: {
+      title: string;
+      company: string;
+      city: string;
+      salaryK: [number, number];
+      companyTags: string[];
+      workAddress?: string | null;
+      sourceUrl?: string | null;
+    };
   }): Promise<CoreJobRecord>;
+  setJobPinned(jobId: string, pinned: boolean): void;
+  buildResumeFollowUps(): Promise<FollowUpQuestion[]>;
+  applyResumeFollowUpAnswers(
+    questions: FollowUpQuestion[],
+    answers: { questionId: string; answerText: string }[]
+  ): Promise<ProfileFact[]>;
   buildFollowUps(jobId: string): Promise<FollowUpQuestion[]>;
   applyFollowUpAnswers(jobId: string, answers: { questionId: string; answerText: string }[]): Promise<ProfileFact[]>;
+  reevaluateJob(jobId: string): Promise<CoreJobRecord | null>;
   draftMaterial(jobId: string): Promise<MaterialPreview>;
+  exportResume(jobId: string): string;
   preScreenJob(jobId: string, keywords: string[]): KeywordPreScreenResult | null;
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
   clear(): void;
@@ -104,6 +125,23 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       return state;
     },
 
+    addManualFact(input) {
+      const content = input.content.trim();
+      const category = input.category.trim();
+      const factNumber = state.factLibrary.length + 1;
+      const fact: ProfileFact = {
+        id: `fact-manual-${factNumber}-${slugify(`${category}-${content}`)}`,
+        category,
+        label: category,
+        value: content,
+        sourceType: "manual",
+        sourceRef: "manual",
+        status: "confirmed",
+        confidence: 1
+      };
+      persist(upsertFacts(state, [fact]));
+    },
+
     async ingestResume(input) {
       const facts = await ingestResume({
         resume: input,
@@ -137,49 +175,149 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     },
 
     async evaluateJobFromJd(input) {
-      const parsedJd = await ingestJd({
-        jdText: input.jdText,
-        client: deps.client
-      });
-      const job = assembleJobPosting({
+      const baseJob = assembleJobPosting({
         base: {
           title: input.jobBase.title,
           company: input.jobBase.company,
           city: input.jobBase.city,
           salaryK: input.jobBase.salaryK,
           companyTags: input.jobBase.companyTags,
-          jdText: input.jdText
+          jdText: input.jdText,
+          workAddress: input.jobBase.workAddress,
+          sourceUrl: input.jobBase.sourceUrl
         },
-        requirements: parsedJd.requirements,
-        risks: parsedJd.risks
-      });
-      const evaluation = await evaluateJob({
-        profile: buildWorkingProfile(),
-        job,
-        client: deps.client,
-        riskSensitivity: state.preferences?.riskSensitivity,
-        hardVeto: state.preferences?.hardVeto
+        requirements: [],
+        risks: []
       });
 
-      const record: CoreJobRecord = {
-        job,
-        evaluation: evaluation.vetoed
-          ? {
-              vetoed: true,
-              vetoRuleId: evaluation.vetoRule.id,
-              vetoRuleLabel: evaluation.vetoRule.label
-            }
-          : {
-              vetoed: false,
-              score: evaluation.score
-            },
-        followUps: [],
-        material: null,
-        updatedAt: new Date().toISOString()
-      };
+      try {
+        const parsedJd = await ingestJd({
+          jdText: input.jdText,
+          client: deps.client
+        });
+        const job = assembleJobPosting({
+          base: {
+            title: input.jobBase.title,
+            company: input.jobBase.company,
+            city: input.jobBase.city,
+            salaryK: input.jobBase.salaryK,
+            companyTags: input.jobBase.companyTags,
+            jdText: input.jdText,
+            workAddress: input.jobBase.workAddress,
+            sourceUrl: input.jobBase.sourceUrl
+          },
+          requirements: parsedJd.requirements,
+          risks: parsedJd.risks
+        });
+        const evaluation = await evaluateJob({
+          profile: buildWorkingProfile(),
+          job,
+          client: deps.client,
+          riskSensitivity: state.preferences?.riskSensitivity,
+          hardVeto: state.preferences?.hardVeto
+        });
 
-      persist(upsertJobRecord(state, record));
-      return getJobRecord(state, job.id) ?? record;
+        const record: CoreJobRecord = {
+          job,
+          evaluation: evaluation.vetoed
+            ? {
+                vetoed: true,
+                vetoRuleId: evaluation.vetoRule.id,
+                vetoRuleLabel: evaluation.vetoRule.label
+              }
+            : {
+                vetoed: false,
+                score: evaluation.score
+              },
+          evaluationError: null,
+          followUps: [],
+          material: null,
+          updatedAt: new Date().toISOString()
+        };
+
+        persist(upsertJobRecord(state, record));
+        return getJobRecord(state, job.id) ?? record;
+      } catch (error) {
+        const failedRecord: CoreJobRecord = {
+          job: baseJob,
+          evaluation: null,
+          evaluationError: error instanceof Error ? error.message : String(error),
+          followUps: [],
+          material: null,
+          updatedAt: new Date().toISOString()
+        };
+        persist(upsertJobRecord(state, failedRecord));
+        return getJobRecord(state, baseJob.id) ?? failedRecord;
+      }
+    },
+
+    setJobPinned(jobId, pinned) {
+      persist(setCoreJobPinned(state, jobId, pinned));
+    },
+
+    async buildResumeFollowUps() {
+      // 简历阶段反问：针对整个已抽取的事实库（未确认），不绑定任何岗位。
+      return orchestrateBuildResumeFollowUps({
+        facts: state.factLibrary,
+        client: deps.client
+      });
+    },
+
+    async applyResumeFollowUpAnswers(questions, answers) {
+      if (questions.length === 0 || answers.length === 0) {
+        return [];
+      }
+      const facts = await orchestrateFollowUpAnswers({
+        questions,
+        answers,
+        client: deps.client
+      });
+      persist(upsertFacts(state, facts));
+      return facts;
+    },
+
+    async reevaluateJob(jobId) {
+      // 事实/确认状态变更后，用当前 confirmed 事实重跑该岗位评分（修复评分被冻结的缺口）。
+      const record = getJobRecord(state, jobId);
+      if (!record || record.job.requirements.length === 0) {
+        return record;
+      }
+
+      try {
+        const evaluation = await evaluateJob({
+          profile: buildWorkingProfile(),
+          job: record.job,
+          client: deps.client,
+          riskSensitivity: state.preferences?.riskSensitivity,
+          hardVeto: state.preferences?.hardVeto
+        });
+
+        persist(
+          upsertJobRecord(state, {
+            ...record,
+            evaluation: evaluation.vetoed
+              ? {
+                  vetoed: true,
+                  vetoRuleId: evaluation.vetoRule.id,
+                  vetoRuleLabel: evaluation.vetoRule.label
+                }
+              : {
+                  vetoed: false,
+                  score: evaluation.score
+                },
+            evaluationError: null
+          })
+        );
+        return getJobRecord(state, jobId);
+      } catch (error) {
+        persist(
+          upsertJobRecord(state, {
+            ...record,
+            evaluationError: error instanceof Error ? error.message : String(error)
+          })
+        );
+        return getJobRecord(state, jobId);
+      }
     },
 
     async buildFollowUps(jobId) {
@@ -218,6 +356,11 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     },
 
     async draftMaterial(jobId) {
+      // 官方输出面构建期强制关闭（fail-closed，先于任何生成路径）。
+      // 闸门交付物过双审前，绝不进入 orchestrateDraftMaterial / materialDrafting。
+      if (!OUTPUT_GATE_RELEASED) {
+        return toBlockedMaterial("官方输出能力未解锁：输出忠实性闸门未过审，材料生成已构建期关闭。");
+      }
       const record = getJobRecord(state, jobId);
       if (!record) {
         return toBlockedMaterial("岗位不存在,无法生成材料。");
@@ -256,6 +399,18 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         })
       );
       return material;
+    },
+
+    exportResume(jobId) {
+      // 官方输出面构建期强制关闭（fail-closed，绝不产出 markdown 字节）。
+      if (!OUTPUT_GATE_RELEASED) {
+        return "";
+      }
+      const record = getJobRecord(state, jobId);
+      if (!record?.material) {
+        return "";
+      }
+      return exportToMarkdown(record.material, record.job.title, record.job.company);
     },
 
     preScreenJob(jobId, keywords) {
@@ -355,6 +510,14 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       state = loadCoreState(deps.storage);
     }
   };
+}
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{Letter}\p{Number}]+/gu, "-")
+    .replace(/^-+|-+$/g, "") || "fact";
 }
 
 function parseBatchDiagnosisAnalysis(

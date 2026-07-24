@@ -156,6 +156,10 @@ function isProfileFact(value: unknown): value is ProfileFact {
   );
 }
 
+function isResumeLine(value: unknown): boolean {
+  return isRecord(value) && typeof (value as Record<string, unknown>).text === "string" && isStringArray((value as Record<string, unknown>).factIds);
+}
+
 function isPreferenceRuleSet(value: unknown): value is PreferenceRuleSet {
   if (!isRecord(value)) return false;
   return (
@@ -198,7 +202,7 @@ function isMaterialVersion(value: unknown): value is MaterialVersion {
     typeof value.strategyLabel === "string" &&
     typeof value.greeting === "string" &&
     Array.isArray(value.resumeLines) &&
-    value.resumeLines.every((item) => typeof item === "string") &&
+    value.resumeLines.every(isResumeLine) &&
     Array.isArray(value.usedFacts) &&
     Array.isArray(value.blockedFacts) &&
     Array.isArray(value.guardrailNotes) &&

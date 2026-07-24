@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenAiCompatibleLlmClient } from "../domain/llmClient";
-import { generateFollowUpQuestions, ingestFollowUpAnswers } from "../domain/followUp";
-import type { JobPosting, RequirementResult, ScoreResult } from "../types";
+import { getConfirmedFacts, createEmptyCoreState } from "../domain/coreState";
+import { generateFollowUpQuestions, generateResumeFollowUpQuestions, ingestFollowUpAnswers } from "../domain/followUp";
+import type { JobPosting, ProfileFact, RequirementResult, ScoreResult } from "../types";
 
 function createMockClient(response: string): OpenAiCompatibleLlmClient {
   return {
@@ -56,7 +57,10 @@ function buildJob(): JobPosting {
     jdText: "负责 React 和后台系统开发。",
     requirements: [],
     risks: [],
-    reviewFlags: []
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
   };
 }
 
@@ -173,6 +177,63 @@ describe("generateFollowUpQuestions", () => {
   });
 });
 
+describe("generateResumeFollowUpQuestions", () => {
+  function buildResumeFact(overrides: Partial<ProfileFact> = {}): ProfileFact {
+    return {
+      id: "fact-resume-1-project-job-hq",
+      category: "project",
+      label: "Job-HQ",
+      value: "独立开发的 AI 求职决策工具",
+      sourceType: "resume",
+      sourceRef: "resume_text",
+      status: "unconfirmed",
+      confidence: 0.9,
+      ...overrides
+    };
+  }
+
+  it("generates resume-refinement questions without requirementId, defaults kind to explore, and respects the resume cap", async () => {
+    const facts = [
+      buildResumeFact(),
+      buildResumeFact({ id: "fact-resume-2-skill-python", category: "skill", label: "Python", value: "会用 Python" })
+    ];
+    // 返回 12 条，验证上限被压到 10。
+    const items = Array.from({ length: 12 }, (_, index) => ({
+      question: `简历细化问题 ${index + 1}？`,
+      rationale: `细化理由 ${index + 1}`
+    }));
+    const client = createMockClient(JSON.stringify({ questions: items }));
+
+    const questions = await generateResumeFollowUpQuestions({ facts, client, maxQuestions: 10 });
+
+    expect(client.completeText).toHaveBeenCalledWith(
+      expect.objectContaining({ responseFormatJson: true })
+    );
+    expect(questions.length).toBe(10);
+    for (const question of questions) {
+      expect(question.kind).toBe("explore");
+      expect(question.requirementId).toBe("resume-refine");
+      expect(question.id).toMatch(/^followup-q-\d+-/);
+    }
+  });
+
+  it("returns [] and does not call llm when there are no usable facts", async () => {
+    const client = createMockClient("{\"questions\":[]}");
+    const onlyRejected = [buildResumeFact({ status: "rejected" })];
+
+    await expect(generateResumeFollowUpQuestions({ facts: [], client })).resolves.toEqual([]);
+    await expect(generateResumeFollowUpQuestions({ facts: onlyRejected, client })).resolves.toEqual([]);
+    expect(client.completeText).not.toHaveBeenCalled();
+  });
+
+  it("gracefully returns [] on garbage json", async () => {
+    const facts = [buildResumeFact()];
+    await expect(
+      generateResumeFollowUpQuestions({ facts, client: createMockClient("not json") })
+    ).resolves.toEqual([]);
+  });
+});
+
 describe("ingestFollowUpAnswers", () => {
   it("extracts user_answer facts from explicit positive answers only", async () => {
     const questions = [
@@ -272,5 +333,53 @@ describe("ingestFollowUpAnswers", () => {
         client: garbageClient
       })
     ).resolves.toEqual([]);
+  });
+
+  it("明显否定答案不调用 LLM（减负，非红线）", async () => {
+    const client = createMockClient('{"facts":[]}');
+    await ingestFollowUpAnswers({
+      questions: [{ id: "q-1", requirementId: "req-1", kind: "explore", question: "你做过吗？", rationale: "确认" }],
+      answers: [{ questionId: "q-1", answerText: "没有做过" }],
+      client
+    });
+    expect(client.completeText).not.toHaveBeenCalled();
+  });
+
+  it("模糊/不确定回答即使调了 LLM，若 LLM 未明确肯定，也不产生 fact", async () => {
+    const client = createMockClient('{"facts":[]}');
+    const facts = await ingestFollowUpAnswers({
+      questions: [{ id: "q-1", requirementId: "req-1", kind: "explore", question: "你做过吗？", rationale: "确认" }],
+      answers: [{ questionId: "q-1", answerText: "可能吧，不太确定" }],
+      client
+    });
+    expect(client.completeText).toHaveBeenCalled();
+    expect(facts).toEqual([]);
+  });
+
+  it("反问产生的 fact 默认是 unconfirmed", async () => {
+    const client = createMockClient(JSON.stringify({
+      facts: [{ category: "项目", label: "React", value: "做过React项目", confidence: 0.9, fromQuestionId: "q-1" }]
+    }));
+    const facts = await ingestFollowUpAnswers({
+      questions: [{ id: "q-1", requirementId: "req-1", kind: "explore", question: "你做过吗？", rationale: "确认" }],
+      answers: [{ questionId: "q-1", answerText: "对，做过" }],
+      client
+    });
+    expect(facts[0].status).toBe("unconfirmed");
+  });
+
+  it("unconfirmed fact 不出现在 getConfirmedFacts 结果里，进不了打分/生成", () => {
+    const state = createEmptyCoreState();
+    state.factLibrary = [{
+      id: "f1",
+      category: "项目",
+      label: "React",
+      value: "做过",
+      sourceType: "user_answer",
+      sourceRef: "test",
+      status: "unconfirmed",
+      confidence: 0.9
+    }];
+    expect(getConfirmedFacts(state)).toEqual([]);
   });
 });

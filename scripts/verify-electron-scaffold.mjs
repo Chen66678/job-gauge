@@ -56,7 +56,8 @@ if (mainSource.includes('targetUrl.startsWith("file://")') || mainSource.include
   failures.push("electron/main.cjs must not allow arbitrary file:// navigation");
 }
 if (!preloadSource.includes("contextBridge.exposeInMainWorld")) failures.push("preload must use contextBridge");
-if (preloadSource.includes("ipcRenderer")) failures.push("preload must not expose ipcRenderer in this scaffold gate");
+if (!preloadSource.includes("ipcRenderer.invoke(`coreApi:${methodName}`")) failures.push("preload must invoke CoreApi through ipcRenderer.invoke");
+if (preloadSource.includes("exposeInMainWorld(\"ipcRenderer\"")) failures.push("preload must not expose ipcRenderer directly");
 if (!preloadSource.includes('localHost: "available"')) failures.push("preload must expose only abstract local host capability");
 if (!preloadSource.includes("exposesFilePath: false")) failures.push("preload must not expose raw job radar file paths");
 if (!preloadSource.includes("exposesBlobContents: false")) failures.push("preload must not expose job radar blob contents");

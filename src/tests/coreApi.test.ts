@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoreJobRecord, CorePreferences } from "../domain/coreState";
 import { CORE_STATE_STORAGE_KEY } from "../domain/coreState";
 import { createCoreApi } from "../domain/coreApi";
+import { OUTPUT_GATE_RELEASED } from "../outputGateRelease";
 import type { KeywordPreScreenResult } from "../domain/jobPreScreen";
 import type { OpenAiCompatibleLlmClient } from "../domain/llmClient";
 import type { FollowUpQuestion } from "../domain/followUp";
@@ -14,6 +15,7 @@ const orchestrationMocks = vi.hoisted(() => ({
   assembleJobPosting: vi.fn(),
   evaluateJob: vi.fn(),
   buildFollowUps: vi.fn(),
+  buildResumeFollowUps: vi.fn(),
   applyFollowUpAnswers: vi.fn(),
   draftMaterial: vi.fn()
 }));
@@ -142,7 +144,7 @@ function buildMaterial(): MaterialPreview {
   return {
     status: "ready",
     greeting: "您好，我有相关经验。",
-    resumeLines: ["负责 React 组件开发。"],
+    resumeLines: [{ text: "负责 React 组件开发。", factIds: ["fact-1"] }],
     usedFacts: [
       {
         factId: "fact-1",
@@ -191,13 +193,17 @@ beforeEach(() => {
     jdText: base.jdText,
     requirements,
     risks,
-    reviewFlags: []
+    reviewFlags: [],
+    pinned: false,
+    workAddress: base.workAddress ?? null,
+    sourceUrl: base.sourceUrl ?? null
   }));
   orchestrationMocks.evaluateJob.mockResolvedValue({
     vetoed: false,
     score: buildScoreResult()
   });
   orchestrationMocks.buildFollowUps.mockResolvedValue([]);
+  orchestrationMocks.buildResumeFollowUps.mockResolvedValue([]);
   orchestrationMocks.applyFollowUpAnswers.mockResolvedValue([]);
   orchestrationMocks.draftMaterial.mockResolvedValue(buildMaterial());
 });
@@ -313,6 +319,29 @@ describe("coreApi", () => {
     expect(result.material).toBeNull();
   });
 
+  it("persists a failed job record with evaluationError instead of throwing when evaluation fails", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    orchestrationMocks.ingestJd.mockRejectedValueOnce(new Error("模型服务无响应"));
+
+    const record = await api.evaluateJobFromJd({
+      jdText: "要求 React 组件开发。",
+      jobBase: {
+        title: "前端工程师",
+        company: "样例科技",
+        city: "上海",
+        salaryK: [20, 30],
+        companyTags: ["SaaS"]
+      }
+    });
+
+    expect(record.evaluation).toBeNull();
+    expect(record.evaluationError).toBe("模型服务无响应");
+    expect(record.job.title).toBe("前端工程师");
+    // 失败也要真的落盘,不是内存里飘着的临时对象。
+    expect(api.getState().jobs.find((item) => item.job.id === record.job.id)).toBeDefined();
+  });
+
   it("applies follow-up answers as unconfirmed facts and persists them", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
@@ -377,7 +406,12 @@ describe("coreApi", () => {
     expect(api2.getState().preferences).toEqual(preferences);
   });
 
-  it("draftMaterial stores the generated preview on the job record", async () => {
+  // 官方输出面构建期强制关闭（D008 §8 / 判据 §4/§8）。
+  // 原「draftMaterial 走生成路径并返回 preview」的断言已与「构建期无条件关闭」冲突，
+  // 转为锁定测试：闸门未过审时 draftMaterial 必须 blocked、根本不进 orchestration。
+  // 生成路径本身的覆盖仍由 orchestration.test.ts + materialDrafting.test.ts 承担。
+  it("[输出面关闭] draftMaterial 在闸门未解锁时返回 blocked，且不进入 orchestration", async () => {
+    expect(OUTPUT_GATE_RELEASED).toBe(false);
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
     const record = await api.evaluateJobFromJd({
@@ -392,15 +426,54 @@ describe("coreApi", () => {
     });
 
     const material = await api.draftMaterial(record.job.id);
-    const savedRecord = api.getState().jobs[0] as CoreJobRecord;
 
-    expect(material).toEqual(buildMaterial());
-    expect(savedRecord.material).toEqual(buildMaterial());
-    expect(orchestrationMocks.draftMaterial).toHaveBeenCalledWith(
-      expect.objectContaining({
-        job: expect.objectContaining({ id: record.job.id })
-      })
-    );
+    expect(material.status).toBe("blocked");
+    expect(material.resumeLines).toEqual([]);
+    expect(material.greeting).toBe("");
+    // 关键：绝不进入生成路径。
+    expect(orchestrationMocks.draftMaterial).not.toHaveBeenCalled();
+  });
+
+  it("[输出面关闭] exportResume 在闸门未解锁时零 markdown 字节外泄（即便记录里已有 ready 材料）", () => {
+    expect(OUTPUT_GATE_RELEASED).toBe(false);
+    // 直接把一条「已生成 ready 材料」的记录种入 storage，绕过被关闭的 draftMaterial，
+    // 验证导出侧独立关闭：即使材料在库，exportResume 也不吐字节。
+    const storage = new MemoryStorage();
+    const readyRecord: CoreJobRecord = {
+      job: {
+        id: "job-ready",
+        title: "前端工程师",
+        company: "样例科技",
+        city: "上海",
+        salaryK: [20, 30],
+        companyTags: ["SaaS"],
+        jdText: "要求 React 组件开发。",
+        requirements: [buildRequirement()],
+        risks: [],
+        reviewFlags: [],
+        pinned: false,
+        workAddress: null,
+        sourceUrl: null
+      },
+      evaluation: { vetoed: false, score: buildScoreResult() },
+      evaluationError: null,
+      followUps: [],
+      material: buildMaterial(),
+      updatedAt: new Date().toISOString()
+    };
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({ factLibrary: [], jobs: [readyRecord], preferences: null }));
+
+    const api = createCoreApi({ client: createClient(), storage });
+    const markdown = api.exportResume("job-ready");
+
+    expect(markdown).toBe("");
+  });
+
+  it("[输出面关闭·回归锁] 构建期常量默认关闭，防日后被悄悄开回来", () => {
+    // 这条是防倒退的锁：任何把 OUTPUT_GATE_RELEASED 改 true 的提交都会先撞红这里，
+    // 逼其走 D008 §8 完整解锁流程（交付物过双审 → 实现 → §5 验收 → 发布硬合取），
+    // 不得为「先跑通链」私自解锁。
+    expect(OUTPUT_GATE_RELEASED).toBe(false);
   });
 
   it("preScreenJob stores preScreenResult on the job record and persists it", async () => {
@@ -556,5 +629,40 @@ describe("coreApi", () => {
 
     expect(result.llmAnalysis).toBeNull();
     expect(llmClient.completeText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("reevaluateJob", () => {
+  it("re-runs evaluation with current confirmed facts and updates the stored score", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发", status: "unconfirmed" });
+    orchestrationMocks.ingestResume.mockResolvedValueOnce([fact]);
+    // 第一次评分：事实还没确认，低分；重评时：已确认，高分。
+    orchestrationMocks.evaluateJob
+      .mockResolvedValueOnce({ vetoed: false, score: buildScoredResult(0, "review") })
+      .mockResolvedValueOnce({ vetoed: false, score: buildScoredResult(85, "personalize") });
+
+    const api = createCoreApi({ client: createClient(), storage });
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    const record = await api.evaluateJobFromJd({
+      jdText: "要求 React 组件开发。",
+      jobBase: { title: "前端工程师", company: "样例科技", city: "上海", salaryK: [20, 30], companyTags: [] }
+    });
+
+    api.setFactStatus("fact-1", "confirmed");
+    const updated = await api.reevaluateJob(record.job.id);
+
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalledTimes(2);
+    expect(updated?.evaluation).toEqual({ vetoed: false, score: buildScoredResult(85, "personalize") });
+    const stored = api.getState().jobs.find((item) => item.job.id === record.job.id);
+    expect(stored?.evaluation).toEqual({ vetoed: false, score: buildScoredResult(85, "personalize") });
+  });
+
+  it("returns the record unchanged when the job has no requirements", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    const missing = await api.reevaluateJob("job-does-not-exist");
+    expect(missing).toBeNull();
+    expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
   });
 });

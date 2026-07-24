@@ -82,7 +82,10 @@ function buildJob(): JobPosting {
     jdText: "负责 React 和 TypeScript 开发。",
     requirements: [],
     risks: [],
-    reviewFlags: []
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
   };
 }
 
@@ -135,8 +138,8 @@ describe("draftApplicationMaterial", () => {
     );
     expect(result.status).toBe("ready");
     expect(result.resumeLines).toEqual([
-      "负责 React 组件开发与页面交互实现。",
-      "使用 TypeScript 开发数据看板并整理页面逻辑。"
+      { text: "负责 React 组件开发与页面交互实现。", factIds: ["fact-react"] },
+      { text: "使用 TypeScript 开发数据看板并整理页面逻辑。", factIds: ["fact-ts"] }
     ]);
     expect(result.usedFacts).toEqual([
       {
@@ -193,7 +196,7 @@ describe("draftApplicationMaterial", () => {
       client
     });
 
-    expect(result.resumeLines).toEqual(["负责 React 组件开发。"]);
+    expect(result.resumeLines).toEqual([{ text: "负责 React 组件开发。", factIds: ["fact-react"] }]);
     expect(result.usedFacts).toEqual([
       {
         factId: "fact-react",
@@ -268,6 +271,64 @@ describe("draftApplicationMaterial", () => {
 
     expect(result.status).toBe("needs_review");
     expect(result.guardrailNotes).toContain("TypeScript 项目经验无确认事实支撑,未纳入材料。");
+  });
+
+  it("挡住语义放大：fact 只支持'用过 React'，生成'精通 React'应被丢弃", async () => {
+    const profile = buildProfile([
+      buildFact({ id: "fact-react", label: "React", value: "用过 React 写过一个页面" })
+    ]);
+    const scoreResult = buildScoreResult([
+      buildRequirementResult({ requirementId: "req-react", matchedFactIds: ["fact-react"] })
+    ]);
+    const client = createMockClient(
+      JSON.stringify({
+        greeting: "您好。",
+        resumeLines: [{ text: "精通 React，主导过多个项目架构设计。", factIds: ["fact-react"] }]
+      })
+    );
+
+    const result = await draftApplicationMaterial({ profile, job: buildJob(), scoreResult, client });
+
+    expect(result.resumeLines).toEqual([]);
+    expect(result.status).toBe("blocked");
+    expect(result.guardrailNotes.some((note) => note.includes("丢弃"))).toBe(true);
+  });
+
+  it("保留限定词：fact 是'课程项目'，输出不能丢掉这个限定制造职业经历暗示", async () => {
+    const profile = buildProfile([
+      buildFact({ id: "fact-course", label: "算法", value: "在课程项目里实现过排序算法" })
+    ]);
+    const scoreResult = buildScoreResult([
+      buildRequirementResult({ requirementId: "req-algo", matchedFactIds: ["fact-course"] })
+    ]);
+
+    const honestClient = createMockClient(
+      JSON.stringify({
+        greeting: "您好。",
+        resumeLines: [{ text: "在课程项目中实现过排序算法。", factIds: ["fact-course"] }]
+      })
+    );
+    const honestResult = await draftApplicationMaterial({
+      profile,
+      job: buildJob(),
+      scoreResult,
+      client: honestClient
+    });
+    expect(honestResult.resumeLines).toEqual([{ text: "在课程项目中实现过排序算法。", factIds: ["fact-course"] }]);
+
+    const amplifiedClient = createMockClient(
+      JSON.stringify({
+        greeting: "您好。",
+        resumeLines: [{ text: "资深算法工程师，精通排序算法架构设计。", factIds: ["fact-course"] }]
+      })
+    );
+    const amplifiedResult = await draftApplicationMaterial({
+      profile,
+      job: buildJob(),
+      scoreResult,
+      client: amplifiedClient
+    });
+    expect(amplifiedResult.resumeLines).toEqual([]);
   });
 
   it("gracefully blocks on garbage or empty json", async () => {
