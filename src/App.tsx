@@ -1,9 +1,12 @@
 import { useState } from 'react'
 import { Tooltip } from 'antd'
 import JobListPage from './JobListPage'
-import WorkflowPage from './WorkflowPage'
+import OnboardingPage from './OnboardingPage'
+import PreferencesPage from './PreferencesPage'
+import ProfilePage from './ProfilePage'
+import WorkflowPage, { type WorkflowStep } from './WorkflowPage'
 
-type Page = 'home' | 'jobs' | 'profile' | 'settings'
+type Page = 'home' | 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding'
 
 // Compact, filled navigation glyphs. They are intentionally not part of the
 // usual thin-outline admin icon family: the rail should feel like a small
@@ -43,11 +46,19 @@ const NAV_ITEMS = [
 ]
 
 export default function App() {
-  const [page, setPage] = useState<Page>('jobs')
+  const [page, setPage] = useState<Page>(() => localStorage.getItem('onboardingCompleted') === 'true' ? 'jobs' : 'onboarding')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [workflowInitialStep, setWorkflowInitialStep] = useState<WorkflowStep | undefined>()
 
   const startWorkflow = (jobId: string) => {
     setSelectedJobId(jobId)
+    setWorkflowInitialStep(undefined)
+    setPage('home')
+  }
+
+  const openFollowUp = (jobId: string) => {
+    setSelectedJobId(jobId)
+    setWorkflowInitialStep('JOB_FOLLOW_UP')
     setPage('home')
   }
 
@@ -88,15 +99,20 @@ export default function App() {
 
       {/* ── Main ── */}
       <main className="app-main">
-        {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} />}
+        {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} onOpenFollowUp={openFollowUp} onOpenProfile={() => setPage('profile')} />}
         {page === 'home' && (
-          <WorkflowPage selectedJobId={selectedJobId} />
+          <WorkflowPage selectedJobId={selectedJobId} initialStep={workflowInitialStep} onOpenProfile={() => setPage('profile')} />
         )}
-        {page === 'profile' && (
-          <div style={{ padding: 40, color: 'var(--color-text-2)' }}>我的资料 — 待实现</div>
-        )}
+        {page === 'profile' && <ProfilePage />}
+        {page === 'preferences' && <PreferencesPage />}
+        {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
         {page === 'settings' && (
-          <div style={{ padding: 40, color: 'var(--color-text-2)' }}>设置 — 待实现</div>
+          <div style={{ padding: 40, color: 'var(--text-secondary)' }}>
+            <h1 style={{ marginBottom: 16 }}>设置</h1>
+            <p style={{ marginBottom: 20 }}>管理求职偏好和安装引导。</p>
+            <button onClick={() => setPage('preferences')}>偏好设置</button>
+            <button style={{ marginLeft: 12 }} onClick={() => setPage('onboarding')}>重新打开安装引导</button>
+          </div>
         )}
       </main>
     </div>

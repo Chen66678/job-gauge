@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Button, Popover, Input, Tooltip } from 'antd'
+import { Button, Tooltip } from 'antd'
 
 type MockJob = {
   id: string
@@ -59,6 +59,19 @@ type CoreState = {
       }
     } | null
     evaluationError: string | null
+    followUps: Array<{
+      id: string
+      requirementId: string
+      kind: 'probe' | 'explore'
+      question: string
+      rationale: string
+    }>
+  }>
+  factLibrary: Array<{
+    id: string
+    sourceType: string
+    sourceRef: string
+    status: 'confirmed' | 'unconfirmed' | 'rejected'
   }>
 }
 
@@ -68,6 +81,7 @@ declare global {
       getState: () => Promise<CoreState>
       setJobPinned: (jobId: string, pinned: boolean) => Promise<void>
       onStateChanged: (listener: (state: CoreState) => void) => () => void
+      reevaluateJob: (jobId: string) => Promise<unknown>
       evaluateJobFromJd: (input: {
         jdText: string
         jobBase: {
@@ -82,6 +96,39 @@ declare global {
       }) => Promise<unknown>
     }
   }
+}
+
+type FollowUpBadge = {
+  text: string
+  className: 'b-followup' | 'b-submitted' | 'b-review' | 'b-processing'
+  clickable: boolean
+}
+
+function getFollowUpFacts(record: CoreState['jobs'][number], factLibrary: CoreState['factLibrary']) {
+  const questionPrefixes = record.followUps.map(followUp => `反问:${followUp.question.slice(0, 20)}`)
+  return factLibrary.filter(fact => (
+    fact.sourceType === 'user_answer' && questionPrefixes.some(prefix => fact.sourceRef.includes(prefix))
+  ))
+}
+
+export function getFollowUpBadge(
+  record: CoreState['jobs'][number],
+  factLibrary: CoreState['factLibrary'],
+  deferredReevaluation: boolean,
+  reevaluating: boolean,
+): FollowUpBadge | null {
+  if (record.followUps.length === 0) return null
+  if (reevaluating) return { text: '重新评估中…', className: 'b-processing', clickable: false }
+
+  const followUpFacts = getFollowUpFacts(record, factLibrary)
+  if (followUpFacts.length === 0) {
+    return { text: `待回答 ${record.followUps.length} 问`, className: 'b-followup', clickable: true }
+  }
+  if (followUpFacts.some(fact => fact.status === 'unconfirmed')) {
+    return { text: '已提交，待确认', className: 'b-submitted', clickable: false }
+  }
+  if (deferredReevaluation) return { text: '待重评', className: 'b-review', clickable: false }
+  return null
 }
 
 function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
@@ -124,124 +171,6 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
   }
 }
 
-// ─── Strategy Slider ─────────────────────────────────────────────
-const STRATEGIES = ['全量打分', '只评命中', '手动打分'] as const
-
-function StrategySlider({
-  value, onChange
-}: { value: number; onChange: (v: number) => void }) {
-  const trackRef = useRef<HTMLDivElement>(null)
-  const dragging = useRef(false)
-  const grabOffset = useRef(7)
-  const [dragX, setDragX] = useState<number | null>(null)
-
-  // Three detents, 14px apart. The handle moves through a monotonic eased
-  // curve between adjacent detents: slight resistance when leaving a stop,
-  // free movement in the middle, and a soft approach to the next stop.
-  const STOPS = [3, 17, 31]
-  const LOCK_RADIUS = 1.6
-
-  const clampRaw = (clientX: number) => {
-    const rect = trackRef.current!.getBoundingClientRect()
-    return Math.max(STOPS[0], Math.min(STOPS[2], clientX - rect.left - grabOffset.current))
-  }
-
-  const applyDetents = (rawX: number): number => {
-    const lockedStop = STOPS.find(stop => Math.abs(rawX - stop) <= LOCK_RADIUS)
-    if (lockedStop !== undefined) return lockedStop
-
-    const segment = rawX < STOPS[1] ? 0 : 1
-    const start = STOPS[segment]
-    const end = STOPS[segment + 1]
-    const travelStart = start + LOCK_RADIUS
-    const travelEnd = end - LOCK_RADIUS
-    const t = Math.max(0, Math.min(1, (rawX - travelStart) / (travelEnd - travelStart)))
-    // Smootherstep draws the handle into the lock plateau continuously. The
-    // short plateau makes the detent physically legible: the pointer keeps
-    // moving for a moment while the handle stays seated in the stop.
-    const eased = t * t * t * (t * (t * 6 - 15) + 10)
-    return start + (end - start) * eased
-  }
-
-  const nearestIdx = (px: number) =>
-    STOPS.reduce((b, _, i) =>
-      Math.abs(STOPS[i] - px) < Math.abs(STOPS[b] - px) ? i : b, 0)
-
-  const onPointerDown = (e: React.PointerEvent) => {
-    dragging.current = true
-    const handle = trackRef.current?.querySelector('.strategy-slider-handle')
-    if (handle && handle.contains(e.target as Node)) {
-      grabOffset.current = e.clientX - handle.getBoundingClientRect().left
-    } else {
-      grabOffset.current = 7
-    }
-    e.currentTarget.setPointerCapture(e.pointerId)
-    const rawX = clampRaw(e.clientX)
-    setDragX(applyDetents(rawX))
-  }
-
-  const onPointerMove = (e: React.PointerEvent) => {
-    if (!dragging.current) return
-    const rawX = clampRaw(e.clientX)
-    setDragX(applyDetents(rawX))
-  }
-
-  const release = (e: React.PointerEvent) => {
-    if (!dragging.current) return
-    dragging.current = false
-    const nearest = nearestIdx(clampRaw(e.clientX))
-    setDragX(null)
-    onChange(nearest)
-  }
-
-  const handleLeft = dragX !== null ? dragX : STOPS[value]
-  const draggingNow = dragX !== null
-
-  return (
-    <div className="strategy-slider-wrap">
-      <span className="strategy-current">{STRATEGIES[value]}</span>
-      <div
-        ref={trackRef}
-        className={`strategy-slider-track ${draggingNow ? 'dragging' : ''}`}
-        role="slider"
-        tabIndex={0}
-        aria-label="评估策略"
-        aria-valuemin={0}
-        aria-valuemax={STRATEGIES.length - 1}
-        aria-valuenow={value}
-        aria-valuetext={STRATEGIES[value]}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={release}
-        onPointerCancel={release}
-        onKeyDown={e => {
-          if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
-            e.preventDefault()
-            onChange(Math.max(0, value - 1))
-          }
-          if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            onChange(Math.min(STRATEGIES.length - 1, value + 1))
-          }
-          if (e.key === 'Home') {
-            e.preventDefault()
-            onChange(0)
-          }
-          if (e.key === 'End') {
-            e.preventDefault()
-            onChange(STRATEGIES.length - 1)
-          }
-        }}
-      >
-        <div
-          className="strategy-slider-handle"
-          style={{ left: handleLeft }}
-        />
-      </div>
-    </div>
-  )
-}
-
 // ─── Score Number ─────────────────────────────────────────────────
 function ScoreNum({ score }: { score: number | null }) {
   if (score === null) return null
@@ -272,21 +201,22 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
   </svg>
 )
 
+function StrategyBadge({ job }: { job: MockJob }) {
+  const badgeClass = job.strategyClass === 'recommend'
+    ? 'b-high'
+    : job.strategyClass === 'suggest'
+      ? 'b-normal'
+      : job.strategyClass === 'consider'
+        ? 'b-review'
+        : job.strategyLabel === '评估失败'
+          ? 'b-reject'
+          : 'b-skip'
+  return <span className={`badge ${badgeClass}`}>{job.strategyLabel}</span>
+}
+
 // ─── Expanded Detail Panel ───────────────────────────────────────
 function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
-  const [pendingAnswers, setPendingAnswers] = useState<Record<string, string>>({})
-  const [answeredSkills, setAnsweredSkills] = useState<Record<string, number>>({})
-  const [popoverOpen, setPopoverOpen] = useState<string | null>(null)
-
-  const pendingCount = job.skills.filter(s => !s.confident && !answeredSkills[s.label]).length
-
-  const handleAnswer = (label: string) => {
-    if (!pendingAnswers[label]?.trim()) return
-    // Simulate: answer gives a score between 45-80
-    const fakeScore = Math.floor(Math.random() * 35) + 45
-    setAnsweredSkills(prev => ({ ...prev, [label]: fakeScore }))
-    setPopoverOpen(null)
-  }
+  const pendingCount = job.skills.filter(skill => !skill.confident).length
 
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
@@ -339,40 +269,12 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
                     <span className="consideration-note">当前经历与要求仍有距离</span>
                   </div>
                 ))}
-                {job.skills.filter(s => !s.confident && !answeredSkills[s.label]).map(s => (
-                  <div key={s.label} className="consideration-item pending">
+                {job.skills.filter(skill => !skill.confident).map(skill => (
+                  <div key={skill.label} className="consideration-item pending">
                     <div className="consideration-copy">
-                      <span className="consideration-name">{s.label}：经历尚未确认</span>
+                      <span className="consideration-name">{skill.label}：经历尚未确认</span>
                       <span className="consideration-note">简历中暂时没有这部分信息</span>
                     </div>
-                    <Popover
-                      open={popoverOpen === s.label}
-                      onOpenChange={v => setPopoverOpen(v ? s.label : null)}
-                      trigger="click"
-                      placement="topLeft"
-                      content={
-                        <div style={{ width: 240 }}>
-                          <p style={{ fontSize: 13, color: 'var(--text-primary)', marginBottom: 10, lineHeight: 1.5 }}>
-                            {s.question}
-                          </p>
-                          <Input.TextArea
-                            rows={2}
-                            placeholder="简要描述你的经验…"
-                            value={pendingAnswers[s.label] ?? ''}
-                            onChange={e => setPendingAnswers(prev => ({ ...prev, [s.label]: e.target.value }))}
-                            style={{ fontSize: 12, marginBottom: 8 }}
-                          />
-                          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                            <Button size="small" onClick={() => setPopoverOpen(null)}>跳过</Button>
-                            <Button size="small" type="primary"
-                              onClick={() => handleAnswer(s.label)}
-                              disabled={!pendingAnswers[s.label]?.trim()}>确认</Button>
-                          </div>
-                        </div>
-                      }
-                    >
-                      <button className="experience-link">补充经历</button>
-                    </Popover>
                   </div>
                 ))}
               </div>
@@ -385,11 +287,11 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
           <div className="decision-section-title">岗位详情</div>
 
           <div className="detail-grid">
-            {job.skills.some(skill => !skill.confident && answeredSkills[skill.label] === undefined) && (
+            {job.skills.some(skill => !skill.confident) && (
               <div className="skill-matrix">
                 <div className="detail-jd-col-label">尚未确认的经历</div>
                 {job.skills
-                  .filter(skill => !skill.confident && answeredSkills[skill.label] === undefined)
+                  .filter(skill => !skill.confident)
                   .map(skill => (
                     <div key={skill.label} className="skill-row">
                       <span className="skill-label">{skill.label}</span>
@@ -448,7 +350,7 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
         <div className="expand-actions">
           <Button size="small">暂不考虑</Button>
           <Button size="small" type="primary"
-            style={{ background: 'var(--accent)', borderColor: 'var(--accent)' }}
+            style={{ background: 'var(--indigo)', borderColor: 'var(--indigo)' }}
             onClick={() => onStartWorkflow?.(job.id)}>
             定制简历
           </Button>
@@ -461,16 +363,27 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
 
 // ─── Job Row ──────────────────────────────────────────────────────
 function JobRow({
-  job, expanded, onToggle, onPin, onStartWorkflow, onRetry
+  job, record, factLibrary, deferredReevaluation, reevaluating, expanded, onToggle, onPin, onStartWorkflow, onOpenFollowUp, onOpenProfile, onRetry, onReevaluate, onDeferReevaluation
 }: {
   job: MockJob
+  record: CoreState['jobs'][number]
+  factLibrary: CoreState['factLibrary']
+  deferredReevaluation: boolean
+  reevaluating: boolean
   expanded: boolean
   onToggle: () => void
   onPin: () => void
   onStartWorkflow?: (jobId: string) => void
+  onOpenFollowUp?: (jobId: string) => void
+  onOpenProfile?: () => void
   onRetry?: (jobId: string) => void
+  onReevaluate: (jobId: string) => void
+  onDeferReevaluation: (jobId: string) => void
 }) {
   const isPending = job.scoreTier === 'pending' || job.scoreTier === 'queued'
+  const followUpBadge = getFollowUpBadge(record, factLibrary, deferredReevaluation, reevaluating)
+  const followUpFacts = getFollowUpFacts(record, factLibrary)
+  const canPromptReevaluation = record.followUps.length > 0 && followUpFacts.length > 0 && !followUpFacts.some(fact => fact.status === 'unconfirmed') && !deferredReevaluation && !reevaluating
 
   // Max 1 risk + 1 gap in collapsed row
   const visibleRisks = job.risks.slice(0, 1)
@@ -491,31 +404,48 @@ function JobRow({
           }
         }}
       >
-        {/* Score */}
-        {job.score !== null ? (
-          <ScoreNum score={job.score} />
-        ) : (
-          <div className="score-pending">
+        <div className="r1-score">
+          {job.score !== null ? <ScoreNum score={job.score} /> : (
+            <div className="score-pending">
             {job.scoreTier === 'pending' && <div className="spinner" />}
             {job.scoreTier === 'queued' && (
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>排队</span>
             )}
-          </div>
-        )}
-
-        {/* Title + company stacked */}
-        <div className="job-title-stack">
-          <div className="job-name">{job.title}</div>
-          <div className="job-company-line">
-            {job.company} · {job.city}{job.commute ? ` · 通勤 ${job.commute}` : ''}
-          </div>
+            </div>
+          )}
         </div>
 
-        {/* Salary */}
-        <div className="job-salary">{job.salary}</div>
+        <div className="r1-badge">
+          <StrategyBadge job={job} />
+          {followUpBadge && (
+            <span className={`badge ${followUpBadge.className}`}>
+              {reevaluating && <span className="spinner" />}
+              {followUpBadge.clickable ? (
+                <button
+                  type="button"
+                  onClick={event => { event.stopPropagation(); onOpenFollowUp?.(job.id) }}
+                  style={{ border: 0, padding: 0, background: 'none', color: 'inherit', cursor: 'pointer', font: 'inherit' }}
+                >
+                  {followUpBadge.text}
+                </button>
+              ) : (
+                followUpBadge.text
+              )}
+              {followUpBadge.className === 'b-submitted' && (
+                <button
+                  type="button"
+                  className="badge-link"
+                  onClick={event => { event.stopPropagation(); onOpenProfile?.() }}
+                >
+                  → 去资料库
+                </button>
+              )}
+            </span>
+          )}
+        </div>
+        <div className="r1-title job-name">{job.title}</div>
 
-        {/* A quiet text summary scans faster than a row of colored chips. */}
-        <div className="job-signals">
+        <div className="r1-reason job-signals">
           {visibleRisks.map(r => (
             <span key={r} className="signal-text risk" title={`风险：${r}`} aria-label={`风险：${r}`}>{r}</span>
           ))}
@@ -524,24 +454,33 @@ function JobRow({
           ))}
         </div>
 
-        {/* Strategy label */}
-        <span className={`strategy-label ${job.strategyClass}`}>
-          {job.strategyLabel}
-        </span>
+        <div className="r1-salary job-salary">{job.salary}</div>
+        <div className="r1-pin">
+          <Tooltip title={job.pinned ? '取消置顶' : '置顶'} placement="left">
+            <button
+              className={`pin-btn ${job.pinned ? 'pinned' : ''}`}
+              aria-label={job.pinned ? '取消置顶' : '置顶'}
+              onClick={e => { e.stopPropagation(); onPin() }}
+            >
+              <PinIcon filled={job.pinned} />
+            </button>
+          </Tooltip>
+        </div>
 
-        {/* Pin */}
-        <Tooltip title={job.pinned ? '取消置顶' : '置顶'} placement="left">
-          <button
-            className={`pin-btn ${job.pinned ? 'pinned' : ''}`}
-            aria-label={job.pinned ? '取消置顶' : '置顶'}
-            onClick={e => { e.stopPropagation(); onPin() }}
-          >
-            <PinIcon filled={job.pinned} />
-          </button>
-        </Tooltip>
-
-        {!isPending && <ChevronIcon open={expanded} />}
+        <div className="r1-chevron">{!isPending && <ChevronIcon open={expanded} />}</div>
+        <div className="r2-info job-company-line">
+          <span>{job.company} · {job.city}</span>
+          {job.commute && <span>通勤 {job.commute}</span>}
+        </div>
       </div>
+
+      {canPromptReevaluation && (
+        <div style={{ margin: '8px 0 0', padding: '10px 12px', border: '1px solid var(--green-border)', borderRadius: 6, background: 'var(--green-bg)', color: 'var(--green-text)', fontSize: 13 }}>
+          ✓ 已确认来自「{job.title}」的 {followUpFacts.length} 条新事实，是否重新评估该岗位？
+          <button type="button" onClick={() => onReevaluate(job.id)} style={{ marginLeft: 10 }}>立刻重评</button>
+          <button type="button" onClick={() => onDeferReevaluation(job.id)} style={{ marginLeft: 8 }}>稍后再说</button>
+        </div>
+      )}
 
       <ExpandPanel job={job} open={expanded} onStartWorkflow={onStartWorkflow} onRetry={onRetry} />
     </div>
@@ -549,12 +488,15 @@ function JobRow({
 }
 
 // ─── Job List Page ────────────────────────────────────────────────
-export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jobId: string) => void }) {
+export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenProfile }: { onStartWorkflow?: (jobId: string) => void; onOpenFollowUp?: (jobId: string) => void; onOpenProfile?: () => void }) {
   const [jobs, setJobs] = useState<MockJob[]>([])
+  const [records, setRecords] = useState<CoreState['jobs']>([])
+  const [factLibrary, setFactLibrary] = useState<CoreState['factLibrary']>([])
+  const [deferredReevalJobIds, setDeferredReevalJobIds] = useState<Set<string>>(new Set())
+  const [reevaluatingJobIds, setReevaluatingJobIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>('1')
-  const [strategy, setStrategy] = useState(1) // 0=全量, 1=只评命中, 2=手动
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'salary'>('score')
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
 
@@ -564,6 +506,8 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
       .then(state => {
         if (!active) return
         setJobs(state.jobs.map(toDisplayJob))
+        setRecords(state.jobs)
+        setFactLibrary(state.factLibrary)
         setLoading(false)
       })
       .catch(reason => {
@@ -575,6 +519,8 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
     const unsubscribe = window.coreApi.onStateChanged(state => {
       if (!active) return
       setJobs(state.jobs.map(toDisplayJob))
+      setRecords(state.jobs)
+      setFactLibrary(state.factLibrary)
       setLoading(false)
     })
 
@@ -635,6 +581,26 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
     })
   }, [])
 
+  const handleReevaluate = useCallback((id: string) => {
+    setReevaluatingJobIds(previous => new Set(previous).add(id))
+    window.coreApi.reevaluateJob(id)
+      .then(() => setDeferredReevalJobIds(previous => {
+        const next = new Set(previous)
+        next.delete(id)
+        return next
+      }))
+      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+      .finally(() => setReevaluatingJobIds(previous => {
+        const next = new Set(previous)
+        next.delete(id)
+        return next
+      }))
+  }, [])
+
+  const handleDeferReevaluation = useCallback((id: string) => {
+    setDeferredReevalJobIds(previous => new Set(previous).add(id))
+  }, [])
+
   // Split pinned / normal
   const pinned = jobs.filter(j => j.pinned)
 
@@ -669,10 +635,6 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
 
       {/* Control bar */}
       <div className="control-bar">
-        <div className="control-bar-left">
-          <span className="control-bar-label">评估策略</span>
-          <StrategySlider value={strategy} onChange={setStrategy} />
-        </div>
         <div className="control-bar-right">
           {evaluatingCount > 0 && (
             <>
@@ -693,18 +655,30 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
               <span>已置顶</span>
               <div className="list-section-line" />
             </div>
-            {pinned.map(job => (
+            {pinned.map(job => {
+              const record = records.find(item => item.job.id === job.id)
+              if (!record) return null
+              return (
               <div key={job.id} ref={el => { rowRefs.current[job.id] = el }}>
                 <JobRow
                   job={job}
+                  record={record}
+                  factLibrary={factLibrary}
+                  deferredReevaluation={deferredReevalJobIds.has(job.id)}
+                  reevaluating={reevaluatingJobIds.has(job.id)}
                   expanded={expandedId === job.id}
                   onToggle={() => toggleExpand(job.id)}
                   onPin={() => togglePin(job.id)}
                   onStartWorkflow={onStartWorkflow}
+                  onOpenFollowUp={onOpenFollowUp}
+                  onOpenProfile={onOpenProfile}
                   onRetry={handleRetry}
+                  onReevaluate={handleReevaluate}
+                  onDeferReevaluation={handleDeferReevaluation}
                 />
               </div>
-            ))}
+              )
+            })}
             <div className="list-section-label">
               <div className="list-section-line" />
             </div>
@@ -713,7 +687,7 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
 
         {/* ── Sort bar ── */}
         <div className="sort-bar">
-          <span style={{ color: 'var(--color-text-3)', marginRight: 4 }}>排序</span>
+          <span style={{ color: 'var(--text-muted)', marginRight: 4 }}>排序</span>
           {(['score', 'salary', 'time'] as const).map(s => (
             <button
               key={s}
@@ -727,22 +701,34 @@ export default function JobListPage({ onStartWorkflow }: { onStartWorkflow?: (jo
 
         {/* ── Normal section ── */}
         {normal.length === 0 && pinned.length === 0 && (
-          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-2)' }}>
+          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             暂无岗位，请先通过插件发送岗位，或手动添加
           </div>
         )}
-        {normal.map(job => (
+        {normal.map(job => {
+          const record = records.find(item => item.job.id === job.id)
+          if (!record) return null
+          return (
           <div key={job.id} ref={el => { rowRefs.current[job.id] = el }}>
             <JobRow
               job={job}
+              record={record}
+              factLibrary={factLibrary}
+              deferredReevaluation={deferredReevalJobIds.has(job.id)}
+              reevaluating={reevaluatingJobIds.has(job.id)}
               expanded={expandedId === job.id}
               onToggle={() => toggleExpand(job.id)}
               onPin={() => togglePin(job.id)}
               onStartWorkflow={onStartWorkflow}
+              onOpenFollowUp={onOpenFollowUp}
+              onOpenProfile={onOpenProfile}
               onRetry={handleRetry}
+              onReevaluate={handleReevaluate}
+              onDeferReevaluation={handleDeferReevaluation}
             />
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

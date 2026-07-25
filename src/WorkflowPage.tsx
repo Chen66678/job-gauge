@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FactStatus, MaterialPreview, ProfileFact } from './types'
+import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact } from './types'
 import { OUTPUT_GATE_RELEASED } from './outputGateRelease'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 
@@ -13,7 +13,7 @@ export type WorkflowStep =
   | 'EXPORT'
 
 export type WorkflowJob = {
-  job: { id: string; title: string; company: string; city: string }
+  job: { id: string; title: string; company: string; city: string; requirements?: JobRequirement[] }
   evaluation: {
     vetoed: true
     vetoRuleLabel: string
@@ -34,6 +34,8 @@ export type WorkflowJob = {
 
 export type FollowUpQuestion = {
   id: string
+  requirementId?: string
+  kind?: 'probe' | 'explore'
   question: string
   rationale: string
 }
@@ -145,12 +147,14 @@ export async function submitJobFollowUpsForWorkflow(input: {
   }
 }
 
-export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJobId?: string | null }) {
+export default function WorkflowPage({ selectedJobId: propJobId, initialStep, onOpenProfile }: { selectedJobId?: string | null; initialStep?: WorkflowStep; onOpenProfile?: () => void }) {
   const api = window.coreApi as unknown as WorkflowApi
   const [step, setStep] = useState<WorkflowStep>('UPLOAD_RESUME')
   const [state, setState] = useState<WorkflowState | null>(null)
   const [resumeText, setResumeText] = useState('')
+  const [resumeFileText, setResumeFileText] = useState<string | null>(null)
   const [resumeImage, setResumeImage] = useState<{ base64: string; mimeType: string } | null>(null)
+  const [selectedResumeFileName, setSelectedResumeFileName] = useState<string | null>(null)
   const [jdText, setJdText] = useState('')
   const [jobTitle, setJobTitle] = useState('产品经理')
   const [company, setCompany] = useState('目标公司')
@@ -172,6 +176,11 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
   const [confirmationNextStep, setConfirmationNextStep] = useState<'SCORING' | 'GENERATE'>('SCORING')
   const [pendingReevaluationJobId, setPendingReevaluationJobId] = useState<string | null>(null)
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
+  const [followUpIndex, setFollowUpIndex] = useState(0)
+  const [followUpSubmitting, setFollowUpSubmitting] = useState(false)
+  const [followUpSubmitError, setFollowUpSubmitError] = useState<string | null>(null)
+  const [followUpSuccess, setFollowUpSuccess] = useState(false)
+  const [postFollowUpStep, setPostFollowUpStep] = useState<'CONFIRM_FACTS' | 'GENERATE'>('GENERATE')
   const confirmedFactIdsAtConfirmEntryRef = useRef<Set<string>>(new Set())
 
   if (previousPropJobIdRef.current !== propJobId) {
@@ -196,6 +205,18 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
     setGenerationJobId(null)
   }, [propJobId])
 
+  useEffect(() => {
+    if (initialStep !== 'JOB_FOLLOW_UP' || !propJobId) return
+    const record = state?.jobs.find(job => job.job.id === propJobId)
+    if (!record || record.followUps.length === 0) return
+    setQuestions(record.followUps)
+    setAnswers({})
+    setFollowUpIndex(0)
+    setFollowUpSubmitError(null)
+    setFollowUpSuccess(false)
+    setStep('JOB_FOLLOW_UP')
+  }, [initialStep, propJobId, state])
+
   const jobId = activeJobId ?? propJobId ?? state?.jobs[state.jobs.length - 1]?.job.id ?? null
   const currentJob = state?.jobs.find(record => record.job.id === jobId) ?? null
   const reevaluationWarning = getReevaluationWarning(currentJob)
@@ -217,12 +238,16 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
   }
 
   const uploadResume = () => run(async () => {
-    if (!resumeText.trim() && !resumeImage) {
-      throw new Error('请先输入简历文本或选择简历图片。')
+    const typedText = resumeText.trim()
+    const fileText = resumeFileText?.trim()
+    if (!typedText && !fileText && !resumeImage) {
+      throw new Error('请先输入简历文本或选择简历文件。')
     }
-    const input = resumeText.trim()
-      ? { kind: 'text' as const, resumeText: resumeText.trim() }
-      : { kind: 'image' as const, imageBase64: resumeImage!.base64, mimeType: resumeImage!.mimeType }
+    const input = typedText
+      ? { kind: 'text' as const, resumeText: typedText }
+      : fileText
+        ? { kind: 'text' as const, resumeText: fileText }
+        : { kind: 'image' as const, imageBase64: resumeImage!.base64, mimeType: resumeImage!.mimeType }
     unwrap(await api.ingestResume(input))
     // 简历阶段追问：针对刚抽取的整个事实库，不绑定岗位。
     const resumeQuestions = unwrap(await api.buildResumeFollowUps())
@@ -303,28 +328,40 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
     if (activeJobIdRef.current !== nextJobId) return
     setQuestions(nextQuestions)
     setAnswers({})
+    setFollowUpIndex(0)
+    setFollowUpSubmitError(null)
+    setFollowUpSuccess(false)
     setStep('JOB_FOLLOW_UP')
   })
 
-  const submitJobFollowUps = () => run(async () => {
-    if (!jobId) throw new Error('岗位尚未完成评分。')
-    const targetJobId = jobId
-    const result = await submitJobFollowUpsForWorkflow({ api, jobId: targetJobId, questions, answers })
-    const next = await refreshState()
-    if (activeJobIdRef.current !== targetJobId) return
-    if (result.nextStep === 'CONFIRM_FACTS') {
-      confirmedFactIdsAtConfirmEntryRef.current = new Set(
-        next.factLibrary.filter(fact => fact.status === 'confirmed').map(fact => fact.id),
-      )
-      setConfirmationNextStep('GENERATE')
-      setPendingReevaluationJobId(targetJobId)
-      setGenerationJobId(null)
-    } else {
-      setPendingReevaluationJobId(null)
-      setGenerationJobId(targetJobId)
+  const submitJobFollowUps = async () => {
+    if (!jobId) { setFollowUpSubmitError('岗位尚未完成评分。'); return }
+    setFollowUpSubmitting(true)
+    setFollowUpSubmitError(null)
+    try {
+      const targetJobId = jobId
+      const result = await submitJobFollowUpsForWorkflow({ api, jobId: targetJobId, questions, answers })
+      const next = await refreshState()
+      if (activeJobIdRef.current !== targetJobId) return
+      if (result.nextStep === 'CONFIRM_FACTS') {
+        confirmedFactIdsAtConfirmEntryRef.current = new Set(
+          next.factLibrary.filter(fact => fact.status === 'confirmed').map(fact => fact.id),
+        )
+        setConfirmationNextStep('GENERATE')
+        setPendingReevaluationJobId(targetJobId)
+        setGenerationJobId(null)
+      } else {
+        setPendingReevaluationJobId(null)
+        setGenerationJobId(targetJobId)
+      }
+      setPostFollowUpStep(result.nextStep)
+      setFollowUpSuccess(true)
+    } catch (reason) {
+      setFollowUpSubmitError(formatError(reason))
+    } finally {
+      setFollowUpSubmitting(false)
     }
-    setStep(result.nextStep)
-  })
+  }
 
   const updateFact = (factId: string, status: FactStatus) => run(async () => {
     unwrap(await api.setFactStatus(factId, status))
@@ -352,6 +389,9 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
     if (activeJobIdRef.current !== targetJobId) return
     setQuestions(nextQuestions)
     setAnswers({})
+    setFollowUpIndex(0)
+    setFollowUpSubmitError(null)
+    setFollowUpSuccess(false)
     setStep('JOB_FOLLOW_UP')
   })
 
@@ -394,6 +434,8 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
         const dataUrl = String(reader.result ?? '')
         const [, base64 = ''] = dataUrl.split(',', 2)
         setResumeImage({ base64, mimeType: file.type })
+        setResumeFileText(null)
+        setSelectedResumeFileName(file.name)
       }
       reader.readAsDataURL(file)
       return
@@ -402,31 +444,25 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
       if (isPdfFile(file)) {
         const extracted = await extractPdfResume(file)
         if (extracted.kind === 'text') {
-          setResumeText(extracted.resumeText)
+          setResumeFileText(extracted.resumeText)
           setResumeImage(null)
         } else {
-          setResumeText('')
+          setResumeFileText(null)
           setResumeImage({ base64: extracted.imageBase64, mimeType: extracted.mimeType })
         }
+        setSelectedResumeFileName(file.name)
         return
       }
-      setResumeText(await file.text())
+      setResumeFileText(await file.text())
       setResumeImage(null)
+      setSelectedResumeFileName(file.name)
     } catch (reason) {
       setError(formatError(reason))
     }
   }
 
   const stepIndex = STEPS.findIndex(item => item.id === step)
-
-  if (!propJobId) {
-    return (
-      <section className="workflow-page" aria-label="前端流程编排">
-        <h1>申请材料流程</h1>
-        <p style={{ padding: '40px 0', color: 'var(--color-text-2)' }}>请先从岗位列表选择一个岗位，然后点击"定制简历"进入此流程。</p>
-      </section>
-    )
-  }
+  const requiresSelectedJob = ['SCORING', 'JOB_FOLLOW_UP', 'GENERATE', 'EXPORT'].includes(step)
 
   return (
     <section className="workflow-page" aria-label="前端流程编排">
@@ -457,7 +493,9 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
       {step === 'UPLOAD_RESUME' && (
         <div className="workflow-panel">
           <h2>上传简历</h2>
-          <textarea value={resumeText} onChange={event => setResumeText(event.target.value)} placeholder="粘贴简历文本" rows={12} />
+          <p>仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
+          {selectedResumeFileName && <p role="status">✓ 已选择文件：{selectedResumeFileName}</p>}
+          <textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeFileText(null); setResumeImage(null); setSelectedResumeFileName(null) }} placeholder="粘贴简历文本" rows={12} />
           <input type="file" accept=".txt,.md,.pdf,image/*" onChange={event => fileSelected(event.target.files?.[0])} />
           <button onClick={uploadResume} disabled={loading}>下一步</button>
         </div>
@@ -479,7 +517,12 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
         </div>
       )}
 
-      {step === 'SCORING' && (
+      {requiresSelectedJob && !propJobId ? (
+        <div className="workflow-panel">
+          <h2>{STEPS.find(item => item.id === step)?.label}</h2>
+          <p style={{ padding: '24px 0', color: 'var(--text-secondary)' }}>请先从岗位列表选择一个岗位，然后点击“定制简历”继续此步骤。</p>
+        </div>
+      ) : step === 'SCORING' && (
         <div className="workflow-panel">
           <h2>岗位评分</h2>
           {currentJob?.evaluation ? (
@@ -518,20 +561,24 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
         </div>
       )}
 
-      {step === 'JOB_FOLLOW_UP' && (
-        <div className="workflow-panel">
-          <h2>岗位追问</h2>
-          <p>针对该岗位评分时缺证据的点，模型再问你几个问题。回答后会重新评分。</p>
-          {questions.length === 0 && <p>没有需要补充的问题。</p>}
-          {questions.map(question => (
-            <label key={question.id} className="workflow-question">
-              <span>{question.question}</span>
-              <small>{question.rationale}</small>
-              <textarea value={answers[question.id] ?? ''} onChange={event => setAnswers(current => ({ ...current, [question.id]: event.target.value }))} rows={3} placeholder="如实填写；不确定可以留空" />
-            </label>
-          ))}
-          <button onClick={submitJobFollowUps} disabled={loading}>下一步</button>
-        </div>
+      {step === 'JOB_FOLLOW_UP' && currentJob && (
+        <FollowUpDrawer
+          jobTitle={currentJob.job.title}
+          requirements={currentJob.job.requirements ?? []}
+          questions={questions}
+          answers={answers}
+          index={followUpIndex}
+          submitting={followUpSubmitting}
+          submitError={followUpSubmitError}
+          success={followUpSuccess}
+          onAnswer={(questionId, answerText) => setAnswers(current => ({ ...current, [questionId]: answerText }))}
+          onPrevious={() => setFollowUpIndex(index => Math.max(0, index - 1))}
+          onNext={() => setFollowUpIndex(index => Math.min(questions.length - 1, index + 1))}
+          onSkip={() => setFollowUpIndex(index => index < questions.length - 1 ? index + 1 : index)}
+          onSubmit={() => void submitJobFollowUps()}
+          onClose={() => setStep(followUpSuccess ? postFollowUpStep : 'SCORING')}
+          onOpenProfile={() => { setStep(postFollowUpStep); onOpenProfile?.() }}
+        />
       )}
 
       {step === 'CONFIRM_FACTS' && (
@@ -553,7 +600,7 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
               </span>
             </div>
           ))}
-          <div className="workflow-add-fact" style={{ marginTop: 16, borderTop: '1px solid var(--color-border, #eee)', paddingTop: 12 }}>
+          <div className="workflow-add-fact" style={{ marginTop: 16, borderTop: '1px solid var(--gray-border, #eee)', paddingTop: 12 }}>
             <strong>手动添加事实</strong>
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <input
@@ -611,4 +658,35 @@ export default function WorkflowPage({ selectedJobId: propJobId }: { selectedJob
       )}
     </section>
   )
+}
+
+function FollowUpDrawer({
+  jobTitle, requirements, questions, answers, index, submitting, submitError, success, onAnswer, onPrevious, onNext, onSkip, onSubmit, onClose, onOpenProfile,
+}: {
+  jobTitle: string
+  requirements: JobRequirement[]
+  questions: FollowUpQuestion[]
+  answers: Record<string, string>
+  index: number
+  submitting: boolean
+  submitError: string | null
+  success: boolean
+  onAnswer: (questionId: string, answerText: string) => void
+  onPrevious: () => void
+  onNext: () => void
+  onSkip: () => void
+  onSubmit: () => void
+  onClose: () => void
+  onOpenProfile: () => void
+}) {
+  const [whyOpen, setWhyOpen] = useState(false)
+  const question = questions[index]
+  const isLast = index >= questions.length - 1
+  const answeredCount = questions.filter(item => answers[item.id]?.trim()).length
+  const requirementLabel = requirements?.find(item => item.id === question?.requirementId)?.label ?? '整体经历匹配度'
+  return <><div className="followup-drawer-scrim" /><aside className="followup-drawer" aria-label="岗位补充信息">
+    <header className="followup-drawer-header"><h2>{jobTitle} · 补充信息</h2><button className="followup-drawer-close" onClick={onClose}>✕ 关闭</button></header>
+    {!success && <div className="followup-question-bar"><span>第 {questions.length ? index + 1 : 0}/{questions.length} 题</span><span className="followup-dots">{questions.map((item, itemIndex) => <i className={itemIndex === index ? 'active' : ''} key={item.id} />)}</span></div>}
+    {submitting ? <div className="followup-state"><span className="spinner" /><p>提交中，约 10–30 秒</p></div> : success ? <div className="followup-state"><span>✅</span><h3>提交成功</h3><p>已收到 {answeredCount} 条回答，系统正在提炼事实</p><p>前往「我的资料」确认新增事实，然后可重新评估此岗位</p><div><button className="primary-button" onClick={onOpenProfile}>去我的资料确认 →</button><button className="text-button" onClick={onClose}>关闭</button></div></div> : question ? <><div className="followup-drawer-content">{submitError && <div className="followup-error">提交失败，请重试</div>}<article className="followup-card"><div className="followup-card-top"><span className="followup-kind-badge">{question.kind === 'explore' ? '探索' : '深挖'}</span><span className="followup-requirement">针对要求：{requirementLabel}</span></div><p className="followup-question-text">{question.question}</p><button className="followup-why" onClick={() => setWhyOpen(value => !value)}>为什么问这个 {whyOpen ? '▾' : '▸'}</button>{whyOpen && <p className="followup-rationale">{question.rationale}</p>}<textarea className="followup-answer" value={answers[question.id] ?? ''} onChange={event => onAnswer(question.id, event.target.value)} placeholder="如实填写；不确定可以留空" /></article></div><footer className="followup-drawer-footer"><button className="text-button" disabled={index === 0} onClick={onPrevious}>← 上一题</button><div className="followup-footer-actions"><button className="followup-link" onClick={onSkip}>跳过本题</button><button className="primary-button" onClick={isLast ? onSubmit : onNext}>{submitError ? '重试' : isLast ? '提交全部' : '下一题 →'}</button></div></footer></> : <div className="followup-state"><h3>没有需要补充的问题</h3><button className="primary-button" onClick={onClose}>继续</button></div>}
+  </aside></>
 }

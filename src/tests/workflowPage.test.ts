@@ -44,7 +44,15 @@ function buildFact(id: string, status: FactStatus = 'unconfirmed'): ProfileFact 
 
 function buildJob(overrides: Partial<WorkflowJob> = {}): WorkflowJob {
   return {
-    job: { id: 'job-new', title: '前端工程师', company: '样例科技', city: '上海' },
+    job: {
+      id: 'job-new',
+      title: '前端工程师',
+      company: '样例科技',
+      city: '上海',
+      requirements: [
+        { id: 'req-react', kind: 'skill', label: 'React 工程化经验', evidence: '', requiredFactIds: [], weight: 1 },
+      ],
+    },
     evaluation: {
       vetoed: false,
       score: { total: 60, strategyLabel: '观望', strategy: 'review', gaps: [], risks: [] },
@@ -83,7 +91,7 @@ function createStatefulApi(initialState: WorkflowState) {
 }
 
 const questions: FollowUpQuestion[] = [
-  { id: 'question-1', question: '请补充项目经历', rationale: '评分缺少证据' },
+  { id: 'question-1', requirementId: 'req-react', kind: 'explore', question: '请补充项目经历', rationale: '评分缺少证据' },
 ]
 
 describe('WorkflowPage state machine', () => {
@@ -108,7 +116,9 @@ describe('WorkflowPage state machine', () => {
 
     render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
-    await waitFor(() => expect((screen.getByPlaceholderText('粘贴简历文本') as HTMLTextAreaElement).value).toBe('张三\n产品经理\n负责招聘平台项目。'))
+    await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.pdf')
+    expect((screen.getByPlaceholderText('粘贴简历文本') as HTMLTextAreaElement).value).toBe('')
+    expect(screen.queryByText('张三')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
     await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({
@@ -265,9 +275,13 @@ describe('WorkflowPage state machine', () => {
     await screen.findByRole('heading', { name: '岗位评分' })
     fireEvent.change(screen.getByPlaceholderText('粘贴岗位描述'), { target: { value: '岗位 JD' } })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
-    await screen.findByRole('heading', { name: '岗位追问' })
+    await screen.findByRole('complementary', { name: '岗位补充信息' })
+    await screen.findByText('针对要求：React 工程化经验')
+    await screen.findByText('探索')
     fireEvent.change(screen.getByPlaceholderText('如实填写；不确定可以留空'), { target: { value: '补充说明' } })
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
+    fireEvent.click(screen.getByRole('button', { name: '提交全部' }))
+    await screen.findByRole('heading', { name: '提交成功' })
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
     await screen.findByRole('heading', { name: '确认事实' })
   }
 
@@ -350,7 +364,7 @@ describe('WorkflowPage state machine', () => {
 
     resolveEvaluation({ ...jobA, evaluation: buildJob().evaluation })
 
-    await waitFor(() => expect(screen.queryByRole('heading', { name: '岗位追问' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('complementary', { name: '岗位补充信息' })).toBeNull())
     expect(screen.getByRole('heading', { name: '岗位评分' })).not.toBeNull()
     expect(screen.getByText('88').closest('p')?.textContent).toContain('评分：88 — 推荐')
     expect(api.buildFollowUps).not.toHaveBeenCalled()
