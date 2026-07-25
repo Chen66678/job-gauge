@@ -138,7 +138,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       {step === 2 && <>
         <h1 className="step-card-title">上传简历</h1><p className="step-card-desc">仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
         {parseStatus === 'success' ? <><div className="status-row">✓ 解析成功，提取到 {parseCount} 条事实</div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(3)}>下一步：确认事实 →</button></div></> : <>
-          <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">▤</span>拖拽 PDF、图片或 TXT 简历到此处<br />或点击选择文件</button>
+          <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF、图片或 TXT 简历到此处<br />或点击选择文件</button>
           <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt,image/*" onChange={event => void fileSelected(event.target.files?.[0])} />
           {selectedFileName && <p className="status-row">✓ 已选择文件：{selectedFileName}</p>}
           <textarea className="wizard-textarea compact" placeholder="也可以粘贴简历文本" value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} />
