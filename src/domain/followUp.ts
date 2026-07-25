@@ -86,6 +86,7 @@ const FOLLOW_UP_ANSWER_SYSTEM_PROMPT = [
   "Do not treat the question text itself as evidence.",
   "Do not invent abilities, projects, durations, metrics, or tools that the user did not explicitly say.",
   'Every extracted fact will still be unconfirmed later, so only extract conservative user-answer facts into json.',
+  "Preserve the original language of the user's answer in every extracted value. Do not translate any value into another language, even if it would read more naturally. If the user answered in Chinese, all extracted values must remain in Chinese exactly as written.",
   'Return json with exactly this shape: {"facts":[{"category":"...","label":"...","value":"...","confidence":0.0,"fromQuestionId":"..."}]}',
   "Confidence means how clearly the user answer supports the fact, not how strong the candidate is.",
   "Do not return markdown. Do not return prose. Return json only."

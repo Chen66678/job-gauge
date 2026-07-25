@@ -34,6 +34,7 @@ const JD_EXTRACTION_SYSTEM_PROMPT = [
   "Only extract requirements and risks that are explicitly stated in the jd or are strong direct implications from the jd wording.",
   "Do not invent, guess, embellish, add standard hiring assumptions, or fill missing conditions.",
   "If the jd does not clearly support an item, leave it out.",
+  "Preserve the original language of the job description in every label and evidence value. Do not translate any value into another language, even if it would read more naturally. If the jd is in Chinese, all label and evidence values must remain in Chinese exactly as written.",
   'Return json with exactly this shape: {"requirements":[{"kind":"skill|experience|preference|risk","label":"...","evidence":"...","weight":0.0}],"risks":[{"label":"...","severity":"low|medium|high","evidence":"..."}]}',
   "For every requirement, requiredFactIds must stay empty and must not be inferred or generated.",
   "Weight means how important or hard-required the requirement is in this jd, from 0 to 1.",

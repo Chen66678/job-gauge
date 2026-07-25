@@ -43,6 +43,7 @@ const PREFERENCE_PARSING_SYSTEM_PROMPT = [
   "Only extract preferences and veto rules that are explicitly stated by the user.",
   "Do not invent missing preferences, keywords, cities, company tags, salary, or veto rules.",
   "If the user did not mention a field, leave it empty or default.",
+  "Preserve the original language of the user's text in every extracted value, including targetCities, preferCompanyTags, excludedKeywords, and veto label/evidence. Do not translate any value into another language, even if it would read more naturally. If the user wrote in Chinese, all extracted values must remain in Chinese exactly as written.",
   'Return json with exactly this shape: {"soft":{"targetCities":["..."],"minSalaryK":0,"preferCompanyTags":["..."],"excludedKeywords":["..."],"riskSensitivity":"ignore|mild|strong"},"veto":[{"label":"...","kind":"city|keyword|other","mode":"allowlist|blocklist","matchTerms":["..."],"evidence":"..."}]}',
   "For city veto rules: use mode=allowlist when the user says they only want to go to specific cities (只去X); use mode=blocklist when the user says they never want to go to specific cities (绝不去X/不去X/不想去X). For keyword/other kind, mode can be omitted.",
   "Risk sensitivity must be a discrete level only: ignore, mild, or strong.",

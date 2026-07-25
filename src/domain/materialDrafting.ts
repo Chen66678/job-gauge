@@ -19,6 +19,7 @@ const MATERIAL_DRAFTING_SYSTEM_PROMPT = [
   "Every resume line must be traceable to the provided confirmed fact ids only.",
   "factIds may only reference the exact confirmed fact ids provided in the input.",
   "If a job requirement lacks confirmed fact support, do not write content for it.",
+  "Preserve the original language of the confirmed facts in every resumeLines text value. Do not translate any value into another language, even if it would read more naturally. If the confirmed facts are in Chinese, every resumeLines text must remain in Chinese exactly as written.",
   "The greeting must be short, in Chinese, and based only on real confirmed match points.",
   "Do not exaggerate or claim unsupported ability.",
   "Do not amplify the strength of any claim beyond what the fact states: 'did once' must not become 'expert in' or 'proficient in'; 'participated in' must not become 'led' or 'architected'; 'small-scale' must not become 'enterprise-scale'; never add metrics, durations, or numbers the fact does not contain.",
