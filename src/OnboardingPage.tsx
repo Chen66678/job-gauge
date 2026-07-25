@@ -56,6 +56,16 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     const timer = window.setTimeout(() => setStep(6), 500)
     return () => window.clearTimeout(timer)
   }, [pluginStatus])
+  useEffect(() => {
+    if (step !== 6) return
+    const baselineJobCount = state?.jobs.length ?? 0
+    setJobStatus('waiting')
+    const unsubscribe = api.onStateChanged(nextState => {
+      setState(nextState as CoreState)
+      if (nextState.jobs.length > baselineJobCount) setJobStatus('success')
+    })
+    return unsubscribe
+  }, [step])
 
   const stepClass = (index: number) => {
     if (index + 1 === step) return 'step-current'
@@ -110,11 +120,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     } catch (reason) { setError(errorText(reason)); setPreferenceStatus('failure') }
   }
 
-  const simulateJob = () => {
-    setJobStatus('evaluating')
-    window.setTimeout(() => setJobStatus('success'), 900)
-  }
-
   const finish = () => { localStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true'); onFinished(); onOpenJobs() }
   const unconfirmed = (state?.factLibrary ?? []).filter(fact => fact.status === 'unconfirmed')
   const preferences = state?.preferences?.ruleSet
@@ -161,7 +166,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       </>}
       {step === 5 && <PluginStep status={pluginStatus} onAdvance={() => setPluginStatus(current => current === 'missing' ? 'disabled' : current === 'disabled' ? 'unauthorized' : 'ready')} />}
       {step === 6 && <>
-        <h1 className="step-card-title">导入第一个岗位</h1>{jobStatus === 'success' ? <><div className="graduation">🎉<h2>第一个岗位已评估完成！</h2><p>你已完成全部安装引导，现在可以在岗位列表中查看评估详情，并继续导入更多岗位。</p></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={finish}>进入岗位列表</button></div></> : <><div className="job-flow"><span>🌐 在 BOSS 打开岗位</span><span>🧩 点击插件图标</span><span>⏳ 等待评估结果</span></div>{jobStatus === 'evaluating' && <p className="inline-loading"><span className="spinner" />评估中，约 30–90 秒</p>}{jobStatus === 'failure' && <div className="error-banner">岗位发送失败：模型服务无响应，请重试</div>}<div className="step-card-footer step-card-footer-single"><button className="primary-button" disabled={jobStatus === 'evaluating'} onClick={simulateJob}>{jobStatus === 'evaluating' ? '等待岗位数据…' : jobStatus === 'failure' ? '重试' : '模拟收到岗位数据'}</button></div></>}
+        <h1 className="step-card-title">导入第一个岗位</h1>{jobStatus === 'success' ? <><div className="graduation">🎉<h2>第一个岗位已评估完成！</h2><p>你已完成全部安装引导，现在可以在岗位列表中查看评估详情，并继续导入更多岗位。</p></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={finish}>进入岗位列表</button></div></> : <><div className="job-flow"><span>🌐 在 BOSS 打开岗位</span><span>🧩 点击插件图标</span><span>⏳ 等待评估结果</span></div><p className="inline-loading"><span className="spinner" />等待插件发送岗位数据…</p></>}
       </>}
     </div></section>
   </div>

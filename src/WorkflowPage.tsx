@@ -49,6 +49,7 @@ export type CoreApiResult<T> = T | { error: string }
 
 export type WorkflowApi = {
   getState: () => Promise<WorkflowState>
+  onStateChanged: (listener: (state: WorkflowState) => void) => () => void
   ingestResume: (input: { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }) => Promise<CoreApiResult<ProfileFact[]>>
   setFactStatus: (factId: string, status: FactStatus) => Promise<CoreApiResult<void>>
   setFactStatusBatch: (updates: { factId: string; status: FactStatus }[]) => Promise<CoreApiResult<void>>
