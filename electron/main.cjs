@@ -53,6 +53,33 @@ function createFileStorage(filePath) {
   };
 }
 
+const crypto = require("node:crypto");
+
+// 本地 API token：仅用于守住 127.0.0.1 回环导入口（浏览器插件 → 本地
+// http server），不是 BYOK Key，不走 safeStorage/钥匙串——明文落盘可接受。
+// 首启无文件则生成 32 字节 hex，随后原子写（tmp + rename，避免中间态半截
+// 文件），此后每次启动直接读取同一个 token，插件侧配置一次即可长期复用。
+function getOrCreateLocalApiToken(filePath) {
+  try {
+    const raw = fs.readFileSync(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.token === "string" && parsed.token.length >= 32) {
+      return parsed.token;
+    }
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") {
+      // 文件存在但损坏（非法 JSON / 形状不对）：视同不存在，下面重新生成。
+    }
+  }
+
+  const token = crypto.randomBytes(32).toString("hex");
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmpPath, JSON.stringify({ version: 1, token }), "utf8");
+  fs.renameSync(tmpPath, filePath);
+  return token;
+}
+
 function createUnavailableLlmClient() {
   const unavailable = async () => {
     throw new Error("未配置模型 API key，暂时无法执行需要模型的操作。");
@@ -133,10 +160,14 @@ function createMainCoreApi() {
     }
   };
 
+  const localApiToken = getOrCreateLocalApiToken(
+    path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "local-api-token.json")
+  );
+
   // `client` 是构造时的快照，热替后会变陈旧；凡是需要"当前生效 client"的
   // 调用点（例如 diagnoseBatch）必须走 getClient() 取活引用，不能直接读
   // 这个字段。
-  return { api: createCoreApi(deps), client: deps.client, getClient: () => deps.client, byokDeps };
+  return { api: createCoreApi(deps), client: deps.client, getClient: () => deps.client, byokDeps, localApiToken };
 }
 
 const CORE_STATE_CHANGED_CHANNEL = "coreState:changed";
@@ -165,6 +196,10 @@ function registerByokHandlers(core) {
   invokeByok("saveAndVerifyByokKey", (request) => saveAndVerifyByokKeyImpl(core.byokDeps, request));
   invokeByok("getByokKeyStatus", () => getByokKeyStatusImpl(core.byokDeps));
   invokeByok("clearByokKey", () => clearByokKeyImpl(core.byokDeps));
+
+  // 只读展示用，不改变任何状态，因此不走 broadcastState；比照 BYOK 红线，
+  // 绝不进 CoreState、绝不出现在 broadcast payload——即便敏感度远低于 Key。
+  ipcMain.handle("coreApi:getLocalApiToken", () => ({ token: core.localApiToken }));
 }
 
 function registerCoreApiHandlers(core) {
@@ -246,7 +281,7 @@ function readJson(request) {
   });
 }
 
-async function startJobApi(core) {
+async function startJobApi(core, localApiToken) {
   if (jobApiState.server) return jobApiState;
   for (const port of JOB_API_PORTS) {
     const server = http.createServer(async (request, response) => {
@@ -257,13 +292,16 @@ async function startJobApi(core) {
         if (isAllowedOrigin(origin)) {
           response.setHeader("Access-Control-Allow-Origin", origin);
           response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-          response.setHeader("Access-Control-Allow-Headers", "Content-Type");
+          response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Radar-Token");
         }
         response.writeHead(204);
         return response.end();
       }
       if (request.url !== "/api/jobs" || request.method !== "POST") return sendJson(response, 404, { error: "not found" }, origin);
       if (!isLoopbackAddress(request.socket.remoteAddress)) return sendJson(response, 403, { error: "forbidden" }, origin);
+      // Host → Origin → 回环 → token，四道防线顺序不可颠倒；token 校验放在
+      // 回环之后、readJson 之前，未过前三关或未带正确 token 都不会触碰请求体。
+      if (request.headers["x-radar-token"] !== localApiToken) return sendJson(response, 403, { error: "forbidden" }, origin);
       try {
         const input = await readJson(request);
         if (!input || typeof input !== "object" || typeof input.title !== "string" || typeof input.company !== "string" || typeof input.description !== "string") {
@@ -370,7 +408,7 @@ if (!process.env.BYOK_MAIN_TEST_MODE) {
     registerCoreApiHandlers(core);
     let apiError = null;
     try {
-      await startJobApi(core);
+      await startJobApi(core, core.localApiToken);
     } catch (error) {
       jobApiState.status = "failed";
       apiError = error;
@@ -404,5 +442,8 @@ module.exports.__test__ = {
   getByokKeyStatus: getByokKeyStatusImpl,
   clearByokKey: clearByokKeyImpl,
   resolveActiveKeySource,
-  broadcastState
+  broadcastState,
+  startJobApi,
+  closeJobApi,
+  getOrCreateLocalApiToken
 };

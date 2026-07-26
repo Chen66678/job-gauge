@@ -72,6 +72,7 @@ export type WorkflowApi = {
   saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
   getByokKeyStatus: () => Promise<ByokKeyStatus>
   clearByokKey: () => Promise<ClearByokKeyResult>
+  getLocalApiToken: () => Promise<{ token: string }>
 }
 
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [

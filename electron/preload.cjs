@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld("coreApi", {
   saveAndVerifyByokKey: (request) => invokeCoreApi("saveAndVerifyByokKey", request),
   getByokKeyStatus: () => invokeCoreApi("getByokKeyStatus"),
   clearByokKey: () => invokeCoreApi("clearByokKey"),
+  getLocalApiToken: () => invokeCoreApi("getLocalApiToken"),
   onStateChanged: (listener) => {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on(CORE_STATE_CHANGED_CHANNEL, handler);

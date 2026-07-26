@@ -3,26 +3,35 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BOSS JD Reader</title>
+    <title>BOSS JD Reader · 设置</title>
     <style>
       body {
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        width: 280px;
-        padding: 16px;
+        width: 360px;
+        padding: 20px;
         margin: 0;
       }
       h1 {
-        font-size: 14px;
+        font-size: 15px;
         margin: 0 0 12px;
       }
-      p {
+      label {
+        display: block;
         font-size: 13px;
         color: #444;
-        margin: 0 0 12px;
+        margin-bottom: 6px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 8px 10px;
+        font-size: 13px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        margin-bottom: 12px;
       }
       button {
-        width: 100%;
-        padding: 8px 12px;
+        padding: 8px 14px;
         font-size: 13px;
         border: none;
         border-radius: 6px;
@@ -30,30 +39,23 @@
         color: #fff;
         cursor: pointer;
       }
-      button:disabled {
-        background: #9bd9b6;
-        cursor: default;
-      }
       #status {
         margin-top: 10px;
         font-size: 12px;
         color: #666;
-        word-break: break-word;
-      }
-      #status.error {
-        color: #c0392b;
       }
       #status.success {
         color: #06ae56;
       }
     </style>
-    <script type="module" crossorigin src="/chunks/popup-BqbvkX84.js"></script>
+    <script type="module" crossorigin src="/chunks/options-DwpGBmbj.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/_virtual_wxt-html-plugins-Dezn_h7o.js">
   </head>
   <body>
-    <h1>BOSS JD Reader</h1>
-    <p id="message">检测中...</p>
-    <button id="send-btn" style="display: none">发送到应用</button>
+    <h1>本地应用配对 token</h1>
+    <label for="token-input">在本地应用「设置」页复制 token，粘贴到此处：</label>
+    <input id="token-input" type="text" placeholder="粘贴 token">
+    <button id="save-btn">保存</button>
     <div id="status"></div>
   </body>
 </html>
