@@ -95,7 +95,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   }
 
   const parseResume = async () => {
-    if (!resumeInput) { setParseStatus('failure'); return }
+    if (!resumeInput) { setError('请先选择要上传的简历文件。'); setParseStatus('failure'); return }
     setParseStatus('parsing'); setError(null)
     try {
       const facts = unwrap(await api.ingestResume(resumeInput))
@@ -129,7 +129,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       </div>)}
     </header>
     <section className="wizard-stage"><div className="step-card">
-      {error && <div className="error-banner">{step === 2 ? '解析失败：文件格式无法识别或内容为空，请重新上传' : `操作失败：${error}`}</div>}
+      {error && <div className="error-banner">操作失败：{error}</div>}
       {step === 1 && <>
         <h1 className="step-card-title">配置模型 Key</h1><p className="step-card-desc">填入你自己的模型服务 Key，用于后续简历解析与岗位评估。Key 仅保存在本地。</p>
         {keyStatus === 'success' && <div className="status-row"><span>✓</span> Key 验证成功，即将进入下一步…</div>}

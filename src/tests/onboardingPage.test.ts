@@ -74,6 +74,25 @@ describe('OnboardingPage resume step', () => {
 
     await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({ kind: 'text', resumeText: '张三\n产品经理' }))
   })
+
+  it('shows the real error instead of a hardcoded format-error banner when the model key is missing', async () => {
+    const api = buildApi({
+      ingestResume: vi.fn(async () => ({ error: '未配置模型 API key，暂时无法执行需要模型的操作。' })),
+    })
+    isPdfFile.mockReturnValue(true)
+    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理' })
+
+    render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
+    await advanceToStep2()
+    await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
+    await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.pdf')
+
+    fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
+
+    await screen.findByText((_, element) => element?.textContent === '操作失败：未配置模型 API key，暂时无法执行需要模型的操作。')
+    expect(screen.queryByText('解析失败：文件格式无法识别或内容为空，请重新上传')).toBeNull()
+    void api
+  })
 })
 
 describe('OnboardingPage job import step', () => {
