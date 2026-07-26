@@ -104,7 +104,7 @@ export default function App() {
           <WorkflowPage selectedJobId={selectedJobId} initialStep={workflowInitialStep} onOpenProfile={() => setPage('profile')} />
         )}
         {page === 'profile' && <ProfilePage />}
-        {page === 'preferences' && <PreferencesPage />}
+        {page === 'preferences' && <PreferencesPage onBack={() => setPage('settings')} />}
         {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
         {page === 'settings' && (
           <div style={{ padding: 40, color: 'var(--text-secondary)' }}>

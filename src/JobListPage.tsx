@@ -173,7 +173,7 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
 
 // ─── Score Number ─────────────────────────────────────────────────
 function ScoreNum({ score }: { score: number | null }) {
-  if (score === null) return null
+  if (score === null) return <div className="score-num empty">—</div>
   const tier = score >= 80 ? 'high' : score >= 70 ? 'medium' : score >= 60 ? 'fair' : 'low'
   return <div className={`score-num ${tier}`}>{score}</div>
 }
@@ -209,7 +209,7 @@ function StrategyBadge({ job }: { job: MockJob }) {
       : job.strategyClass === 'consider'
         ? 'b-review'
         : job.strategyLabel === '评估失败'
-          ? 'b-reject'
+          ? 'b-fail'
           : 'b-skip'
   return <span className={`badge ${badgeClass}`}>{job.strategyLabel}</span>
 }
@@ -217,6 +217,7 @@ function StrategyBadge({ job }: { job: MockJob }) {
 // ─── Expanded Detail Panel ───────────────────────────────────────
 function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
   const pendingCount = job.skills.filter(skill => !skill.confident).length
+  const confirmedEvidence = job.skills.filter(skill => skill.confident && (skill.pct ?? 0) >= 70)
 
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
@@ -234,8 +235,13 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
               not a machine-generated checklist. */}
           <section className="decision-column">
             <div className="decision-section-title">匹配依据</div>
+            {confirmedEvidence.length > 0 && (
+              <div className="fact-chip-list" aria-label="已确认依据">
+                {confirmedEvidence.map(skill => <span className="fact-chip" key={skill.label}>✓ 已确认 {skill.label}</span>)}
+              </div>
+            )}
             <div className="decision-list">
-              {job.skills.filter(s => s.confident && (s.pct ?? 0) >= 70).map(s => (
+              {confirmedEvidence.map(s => (
                 <div key={s.label} className="evidence-item">
                   <div className="evidence-line">
                     <span className="evidence-name">{s.label}</span>
@@ -247,7 +253,7 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
                   <div className="evidence-note">已有经历覆盖这项核心要求</div>
                 </div>
               ))}
-              {job.skills.filter(s => s.confident && (s.pct ?? 0) >= 70).length === 0 && (
+              {confirmedEvidence.length === 0 && (
                 <div className="empty-evidence">目前没有明显的优势项</div>
               )}
             </div>
@@ -388,6 +394,8 @@ function JobRow({
   // Max 1 risk + 1 gap in collapsed row
   const visibleRisks = job.risks.slice(0, 1)
   const visibleGaps = job.gaps.slice(0, 1)
+  const matchEvidence = job.skills.find(skill => skill.confident && (skill.pct ?? 0) >= 70)
+  const matchedRequirements = job.skills.filter(skill => skill.confident).length
 
   return (
     <div className="job-row-wrap">
@@ -405,7 +413,12 @@ function JobRow({
         }}
       >
         <div className="r1-score">
-          {job.score !== null ? <ScoreNum score={job.score} /> : (
+          {job.evaluationError ? (
+            <div className="failure-score">
+              <span className="failure-icon" aria-label="评估失败">!</span>
+              <button type="button" onClick={event => { event.stopPropagation(); onRetry?.(job.id) }}>重试</button>
+            </div>
+          ) : job.score !== null || job.scoreTier === 'unevaluated' ? <ScoreNum score={job.score} /> : (
             <div className="score-pending">
             {job.scoreTier === 'pending' && <div className="spinner" />}
             {job.scoreTier === 'queued' && (
@@ -446,6 +459,7 @@ function JobRow({
         <div className="r1-title job-name">{job.title}</div>
 
         <div className="r1-reason job-signals">
+          {matchEvidence && <span className="match-chip" title={`匹配依据：${matchEvidence.label}`}>✓ {matchEvidence.label}</span>}
           {visibleRisks.map(r => (
             <span key={r} className="signal-text risk" title={`风险：${r}`} aria-label={`风险：${r}`}>{r}</span>
           ))}
@@ -471,6 +485,7 @@ function JobRow({
         <div className="r2-info job-company-line">
           <span>{job.company} · {job.city}</span>
           {job.commute && <span>通勤 {job.commute}</span>}
+          {job.requirements.length > 0 && <span className="kw-chip">关键词命中 {matchedRequirements}/{job.requirements.length}</span>}
         </div>
       </div>
 
@@ -626,9 +641,10 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   })
 
   const evaluatingCount = jobs.filter(j => j.scoreTier === 'pending').length
+  const failedJobs = jobs.filter(job => Boolean(job.evaluationError))
 
   if (loading) return <div>加载中...</div>
-  if (error) return <div>加载失败: {error}</div>
+  if (error) return <div className="failure-banner" role="alert">加载失败：{error}</div>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -644,6 +660,13 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
           )}
         </div>
       </div>
+
+      {failedJobs.length > 0 && (
+        <div className="failure-banner" role="alert">
+          <span>有 {failedJobs.length} 个岗位评估失败，请重试。</span>
+          <button type="button" onClick={() => failedJobs.forEach(job => handleRetry(job.id))}>全部重试</button>
+        </div>
+      )}
 
       {/* List */}
       <div className="job-list-container">
@@ -701,8 +724,11 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
 
         {/* ── Normal section ── */}
         {normal.length === 0 && pinned.length === 0 && (
-          <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            暂无岗位，请先通过插件发送岗位，或手动添加
+          <div className="job-list-empty">
+            <div className="job-list-empty-icon" aria-hidden="true">⌕</div>
+            <h2>还没有岗位</h2>
+            <p>通过插件发送岗位后，会在这里生成匹配评估和行动建议。</p>
+            <button type="button" className="job-list-empty-action" onClick={onOpenProfile}>先完善我的资料</button>
           </div>
         )}
         {normal.map(job => {

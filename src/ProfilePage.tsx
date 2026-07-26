@@ -155,7 +155,7 @@ export default function ProfilePage() {
   const confirmedCount = facts.filter(fact => fact.status === 'confirmed').length
 
   const factCard = (fact: ProfileFact, processed = false) => (
-    <div className={`fact-card ${processed ? 'is-processed' : ''}`} key={fact.id}>
+    <div className={`fact-card ${processed ? 'done-card is-processed' : ''}`} key={fact.id}>
       <div className="fact-main">
         <div className="fact-top">
           <span className="fact-label">{fact.label}</span>

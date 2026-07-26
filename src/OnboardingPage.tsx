@@ -10,7 +10,7 @@ type Step = 1 | 2 | 3 | 4 | 5 | 6
 type KeyStatus = 'empty' | 'checking' | 'success' | 'failure'
 type ParseStatus = 'idle' | 'parsing' | 'success' | 'failure'
 type PreferenceStatus = 'idle' | 'saving' | 'success' | 'failure'
-type PluginStatus = 'missing' | 'disabled' | 'unauthorized' | 'ready'
+type PluginStatus = 'missing' | 'disabled' | 'unauthorized' | 'ready' | 'send_failed'
 
 const ONBOARDING_COMPLETE_KEY = 'onboardingCompleted'
 const STEPS = ['配 Key', '传简历', '确认事实', '设偏好', '检查插件', '导入岗位']
@@ -161,7 +161,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
           <div className="step-card-footer"><button className="text-button" onClick={() => setStep(5)}>跳过，使用默认</button><button className="primary-button" disabled={preferenceStatus === 'saving'} onClick={() => void savePreferences()}>{preferenceStatus === 'saving' ? '解析中…' : preferenceStatus === 'failure' ? '重试' : '填写 → 解析并保存'}</button></div>
         </>}
       </>}
-      {step === 5 && <PluginStep status={pluginStatus} onAdvance={() => setPluginStatus(current => current === 'missing' ? 'disabled' : current === 'disabled' ? 'unauthorized' : 'ready')} />}
+      {step === 5 && <PluginStep status={pluginStatus} onAdvance={() => setPluginStatus(current => current === 'missing' ? 'disabled' : current === 'disabled' ? 'unauthorized' : 'ready')} onPreviewSendFailure={() => setPluginStatus('send_failed')} />}
       {step === 6 && <>
         <h1 className="step-card-title">导入第一个岗位</h1>{jobStatus === 'success' ? <><div className="graduation">🎉<h2>第一个岗位已评估完成！</h2><p>你已完成全部安装引导，现在可以在岗位列表中查看评估详情，并继续导入更多岗位。</p></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={finish}>进入岗位列表</button></div></> : <><div className="job-flow"><span>🌐 在 BOSS 打开岗位</span><span>🧩 点击插件图标</span><span>⏳ 等待评估结果</span></div><p className="inline-loading"><span className="spinner" />等待插件发送岗位数据…</p></>}
       </>}
@@ -177,7 +177,8 @@ function PreferenceChips({ preferences }: { preferences: CoreState['preferences'
   return <>{groups.map(([label, entries, kind]) => entries.length ? <div className="pref-group" key={label}><b>{label}</b><div>{entries.map(entry => <span className={`pref-chip ${kind}`} key={entry}>{entry}</span>)}</div></div> : null)}</>
 }
 
-function PluginStep({ status, onAdvance }: { status: PluginStatus; onAdvance: () => void }) {
-  const content = status === 'missing' ? ['请先安装浏览器插件', '安装完成后将自动检测并继续', '安装插件'] : status === 'disabled' ? ['插件已安装，请启用', '插件当前处于停用状态，启用后将自动继续', '去启用'] : status === 'unauthorized' ? ['需要授权插件连接本地应用', '按示意图操作：先点插件图标，再点弹窗中的「授权连接」', '我已点击插件授权'] : ['✓ 插件已就绪', '即将进入最后一步：导入岗位', '']
-  return <><h1 className="step-card-title">检查插件</h1><div className={`plugin-icon-box ${status === 'ready' ? 'done' : ''}`}>{status === 'unauthorized' ? '🧩 → ✓' : '🧩'}</div><h2 className="plugin-title">{content[0]}</h2><p className="step-card-desc centered">{content[1]}</p>{status !== 'ready' && <div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={onAdvance}>{content[2]}</button></div>}</>
+function PluginStep({ status, onAdvance, onPreviewSendFailure }: { status: PluginStatus; onAdvance: () => void; onPreviewSendFailure: () => void }) {
+  if (status === 'send_failed') return <><h1 className="step-card-title">检查插件</h1><div className="plugin-icon-box plugin-failed">!</div><h2 className="plugin-title">岗位发送失败：本地应用未响应（连接超时）</h2><p className="step-card-desc centered">刷新 BOSS 页后重试，确认本地应用仍在运行。</p><div className="step-card-footer"><button className="text-button" onClick={onAdvance}>刷新 BOSS 页后重试</button><button className="primary-button" onClick={onAdvance}>重试</button></div></>
+  const content = status === 'missing' ? ['请先安装浏览器插件', '安装完成后将自动检测并继续', '安装插件'] : status === 'disabled' ? ['插件已安装，请启用', '插件当前处于停用状态，启用后将自动继续', '去启用'] : status === 'unauthorized' ? ['需要授权插件连接本地应用', '① 点击插件图标 → ② 点弹窗中的「授权连接」', '我已点击插件授权'] : ['✓ 插件已就绪', '即将进入最后一步：导入岗位', '']
+  return <><h1 className="step-card-title">检查插件</h1><p className="plugin-polling-note">系统每 2 秒自动检测插件状态</p><div className={`plugin-icon-box ${status === 'ready' ? 'done' : ''}`}>{status === 'unauthorized' ? '🧩 → ✓' : '🧩'}</div><h2 className="plugin-title">{content[0]}</h2><p className="step-card-desc centered">{content[1]}</p>{status === 'unauthorized' && <div className="plugin-auth-hint">① 点击浏览器工具栏的插件图标<br />② 在弹窗中选择「授权连接」</div>}{status !== 'ready' && <div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={onAdvance}>{content[2]}</button></div>}{status === 'ready' && <button className="plugin-preview-button" type="button" onClick={onPreviewSendFailure}>预览发送失败态</button>}</>
 }
