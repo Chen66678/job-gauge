@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import type { PreferenceRuleSet } from './types'
 import type { CoreApiResult, WorkflowApi } from './WorkflowPage'
@@ -28,14 +28,42 @@ export default function PreferencesPage({ onBack }: { onBack?: () => void }) {
   const [status, setStatus] = useState<'editing' | 'saving' | 'success' | 'failure'>('editing')
   const [error, setError] = useState('')
   const [editablePreferences, setEditablePreferences] = useState<EditablePreferences>(() => toEditablePreferences())
+  // Once the user touches a chip (delete/switch) or a fresh save lands, no
+  // later state hydration is allowed to overwrite editablePreferences again —
+  // otherwise a stale in-flight getState() resolving after an edit silently
+  // reverts the user's correction.
+  const editsLocked = useRef(false)
   const refresh = async () => setState(await api.getState() as CoreState)
-  useEffect(() => { void refresh().catch(reason => { setError(message(reason)); setStatus('failure') }) }, [])
-  useEffect(() => { if (state?.preferences?.ruleSet) setEditablePreferences(toEditablePreferences(state.preferences.ruleSet)) }, [state?.preferences?.ruleSet])
-  const save = async () => { setStatus('saving'); setError(''); try { const savedPreferences = unwrap(await api.setPreferencesFromText({ acceptText: text, vetoText: text })) as { ruleSet: PreferenceRuleSet }; setEditablePreferences(toEditablePreferences(savedPreferences.ruleSet)); await refresh(); setStatus('success') } catch (reason) { setError(message(reason)); setStatus('failure') } }
+  useEffect(() => {
+    void (async () => {
+      try {
+        const loaded = await api.getState() as CoreState
+        setState(loaded)
+        if (!editsLocked.current) setEditablePreferences(toEditablePreferences(loaded.preferences?.ruleSet))
+      } catch (reason) {
+        setError(message(reason))
+        setStatus('failure')
+      }
+    })()
+  }, [])
+  const save = async () => {
+    setStatus('saving'); setError('')
+    try {
+      const savedPreferences = unwrap(await api.setPreferencesFromText({ acceptText: text, vetoText: text })) as { ruleSet: PreferenceRuleSet }
+      editsLocked.current = true
+      setEditablePreferences(toEditablePreferences(savedPreferences.ruleSet))
+      await refresh()
+      setStatus('success')
+    } catch (reason) { setError(message(reason)); setStatus('failure') }
+  }
   const rules = state?.preferences?.ruleSet
   const vetoes = state?.preferences?.hardVeto.rules ?? []
-  const deletePreference = (category: PreferenceCategory, item: string) => setEditablePreferences(current => ({ ...current, [category]: current[category].filter(value => value !== item) }))
+  const deletePreference = (category: PreferenceCategory, item: string) => {
+    editsLocked.current = true
+    setEditablePreferences(current => ({ ...current, [category]: current[category].filter(value => value !== item) }))
+  }
   const switchPreferenceCategory = (category: PreferenceCategory, item: string) => {
+    editsLocked.current = true
     const nextCategory = PREFERENCE_CATEGORIES[(PREFERENCE_CATEGORIES.indexOf(category) + 1) % PREFERENCE_CATEGORIES.length]
     setEditablePreferences(current => ({ ...current, [category]: current[category].filter(value => value !== item), [nextCategory]: [...current[nextCategory], item] }))
   }
