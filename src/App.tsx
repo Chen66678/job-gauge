@@ -4,6 +4,7 @@ import JobListPage from './JobListPage'
 import OnboardingPage from './OnboardingPage'
 import PreferencesPage from './PreferencesPage'
 import ProfilePage from './ProfilePage'
+import SettingsPage from './SettingsPage'
 import WorkflowPage, { type WorkflowStep } from './WorkflowPage'
 
 type Page = 'home' | 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding'
@@ -107,12 +108,7 @@ export default function App() {
         {page === 'preferences' && <PreferencesPage onBack={() => setPage('settings')} />}
         {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
         {page === 'settings' && (
-          <div style={{ padding: 40, color: 'var(--text-secondary)' }}>
-            <h1 style={{ marginBottom: 16 }}>设置</h1>
-            <p style={{ marginBottom: 20 }}>管理求职偏好和安装引导。</p>
-            <button onClick={() => setPage('preferences')}>偏好设置</button>
-            <button style={{ marginLeft: 12 }} onClick={() => setPage('onboarding')}>重新打开安装引导</button>
-          </div>
+          <SettingsPage onOpenPreferences={() => setPage('preferences')} onOpenOnboarding={() => setPage('onboarding')} />
         )}
       </main>
     </div>

@@ -95,6 +95,9 @@ declare global {
           sourceUrl?: string | null
         }
       }) => Promise<CoreApiResult<unknown>>
+      saveAndVerifyByokKey: (request: { apiKey: string }) => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
+      getByokKeyStatus: () => Promise<{ configured: boolean; source: 'keychain' | 'environment' | 'none' }>
+      clearByokKey: () => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
     }
   }
 }

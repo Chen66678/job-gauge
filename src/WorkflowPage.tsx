@@ -3,6 +3,7 @@ import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact } from '.
 import { OUTPUT_GATE_RELEASED } from './outputGateRelease'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import { unwrap, errorText as formatError, type CoreApiResult } from './coreApiResult'
+import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, SaveAndVerifyByokKeyResult } from './domain/byokKeyStore'
 
 export type WorkflowStep =
   | 'UPLOAD_RESUME'
@@ -68,6 +69,9 @@ export type WorkflowApi = {
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
   exportResume: (jobId: string) => Promise<CoreApiResult<string>>
   addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
+  saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
+  getByokKeyStatus: () => Promise<ByokKeyStatus>
+  clearByokKey: () => Promise<ClearByokKeyResult>
 }
 
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [

@@ -28,6 +28,9 @@ function buildApi(overrides: Partial<WorkflowApi> = {}) {
     getState: vi.fn(async () => state),
     onStateChanged: vi.fn(() => () => {}),
     ingestResume: vi.fn(async () => []),
+    saveAndVerifyByokKey: vi.fn(async () => ({ ok: true as const, configured: true, source: 'keychain' as const })),
+    getByokKeyStatus: vi.fn(async () => ({ configured: false, source: 'none' as const })),
+    clearByokKey: vi.fn(async () => ({ ok: true as const, configured: false, source: 'none' as const })),
     ...overrides,
   } as unknown as WorkflowApi
   window.coreApi = api as unknown as typeof window.coreApi
@@ -73,6 +76,37 @@ describe('OnboardingPage resume step', () => {
     fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
 
     await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({ kind: 'text', resumeText: '张三\n产品经理' }))
+  })
+
+  it('uses the real saveAndVerifyByokKey IPC result instead of the old fake key==="invalid" check', async () => {
+    const api = buildApi({
+      saveAndVerifyByokKey: vi.fn(async (request: { apiKey: string }) => {
+        // 旧假验证只认字符串 'invalid'；这里故意传一个旧逻辑会判定为"有效"的
+        // 值，但让真实 IPC mock 判定失败，证明界面现在真的依赖 IPC 返回值。
+        expect(request.apiKey).toBe('sk-should-fail')
+        return { ok: false as const, code: 'auth_failed' as const, message: 'API Key 无效或无权访问模型，请检查后重试。' }
+      }),
+    })
+
+    render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
+    fireEvent.change(screen.getByPlaceholderText('输入模型服务 Key'), { target: { value: 'sk-should-fail' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证并继续' }))
+
+    await screen.findByText('API Key 无效或无权访问模型，请检查后重试。')
+    expect(screen.queryByRole('heading', { name: '上传简历', level: 1 })).toBeNull()
+    expect(api.saveAndVerifyByokKey).toHaveBeenCalledWith({ apiKey: 'sk-should-fail' })
+  })
+
+  it('advances to step 2 only after saveAndVerifyByokKey resolves ok', async () => {
+    buildApi({
+      saveAndVerifyByokKey: vi.fn(async () => ({ ok: true as const, configured: true, source: 'keychain' as const })),
+    })
+
+    render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
+    fireEvent.change(screen.getByPlaceholderText('输入模型服务 Key'), { target: { value: 'sk-real-valid-key' } })
+    fireEvent.click(screen.getByRole('button', { name: '验证并继续' }))
+
+    await screen.findByRole('heading', { name: '上传简历', level: 1 }, { timeout: 5000 })
   })
 
   it('shows the real error instead of a hardcoded format-error banner when the model key is missing', async () => {

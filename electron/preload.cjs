@@ -23,6 +23,9 @@ contextBridge.exposeInMainWorld("coreApi", {
   diagnoseBatch: () => invokeCoreApi("diagnoseBatch"),
   clear: () => invokeCoreApi("clear"),
   addManualFact: (input) => invokeCoreApi("addManualFact", input),
+  saveAndVerifyByokKey: (request) => invokeCoreApi("saveAndVerifyByokKey", request),
+  getByokKeyStatus: () => invokeCoreApi("getByokKeyStatus"),
+  clearByokKey: () => invokeCoreApi("clearByokKey"),
   onStateChanged: (listener) => {
     const handler = (_event, state) => listener(state);
     ipcRenderer.on(CORE_STATE_CHANGED_CHANNEL, handler);

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require("electron");
 require("tsx/cjs");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -6,6 +6,13 @@ const path = require("node:path");
 const { createCoreApi } = require("../src/domain/coreApi.ts");
 const { createLlmClient } = require("../src/domain/llmClient.ts");
 const { CORE_STATE_STORAGE_KEY } = require("../src/domain/coreState.ts");
+const {
+  saveAndVerifyByokKey: saveAndVerifyByokKeyImpl,
+  getByokKeyStatus: getByokKeyStatusImpl,
+  clearByokKey: clearByokKeyImpl,
+  resolveActiveKeySource,
+  BYOK_PROBE_REQUEST
+} = require("../src/domain/byokKeyStore.ts");
 
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const BUILT_RENDERER_ENTRY = path.join(__dirname, "..", "dist", "index.html");
@@ -53,11 +60,83 @@ function createUnavailableLlmClient() {
   return { completeText: unavailable, completeVision: unavailable };
 }
 
+function buildClientForKey(apiKey) {
+  return apiKey ? createLlmClient({ apiKey }) : createUnavailableLlmClient();
+}
+
+// 密文落盘必须原子替换（契约 §4.133.3）：先写临时文件再 rename，避免中间
+// 状态下读到半截 JSON。
+function createByokFileIO(filePath) {
+  return {
+    read() {
+      try {
+        return fs.readFileSync(filePath, "utf8");
+      } catch (error) {
+        if (error && error.code === "ENOENT") return null;
+        return null;
+      }
+    },
+    write(content) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+      fs.writeFileSync(tmpPath, content, "utf8");
+      fs.renameSync(tmpPath, filePath);
+    },
+    remove() {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (error) {
+        if (!error || error.code !== "ENOENT") throw error;
+      }
+    }
+  };
+}
+
+function createByokSafeStorageAdapter() {
+  return {
+    isEncryptionAvailable: () => safeStorage.isEncryptionAvailable(),
+    encryptString: (plainText) => safeStorage.encryptString(plainText),
+    decryptString: (encrypted) => safeStorage.decryptString(encrypted)
+  };
+}
+
+// §6 热替：deps.client 由 createCoreApi 在每次方法调用时读取（coreApi.ts 中
+// 的 deps.client），因此这里保持同一 deps 对象引用、只替换其 client 字段，
+// 后续发起的核心操作即自然取得新 client；不重建 core、不改变
+// core-state.json 的存储语义。
 function createMainCoreApi() {
   const storage = createFileStorage(path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "core-state.json"));
-  const apiKey = process.env.DASHSCOPE_API_KEY?.trim();
-  const client = apiKey ? createLlmClient({ apiKey }) : createUnavailableLlmClient();
-  return { api: createCoreApi({ client, storage }), client };
+  const byokFileIO = createByokFileIO(path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "byok-key.enc.json"));
+  const byokSafeStorage = createByokSafeStorageAdapter();
+
+  const initialActive = resolveActiveKeySource({
+    safeStorage: byokSafeStorage,
+    fileIO: byokFileIO,
+    getEnvApiKey: () => process.env.DASHSCOPE_API_KEY
+  });
+  const deps = { client: buildClientForKey(initialActive.apiKey), storage };
+
+  const byokDeps = {
+    safeStorage: byokSafeStorage,
+    fileIO: byokFileIO,
+    getEnvApiKey: () => process.env.DASHSCOPE_API_KEY,
+    probeApiKey: async (apiKey) => {
+      const probeClient = createLlmClient({ apiKey });
+      await probeClient.completeText(BYOK_PROBE_REQUEST);
+    },
+    onActiveKeyChanged: (result) => {
+      deps.client = buildClientForKey(result.apiKey);
+    },
+    log: (event) => {
+      // 只记录不含敏感信息的白名单事件名（契约 §8.5），不落 request/response 原文。
+      console.log(`[byok] ${event}`);
+    }
+  };
+
+  // `client` 是构造时的快照，热替后会变陈旧；凡是需要"当前生效 client"的
+  // 调用点（例如 diagnoseBatch）必须走 getClient() 取活引用，不能直接读
+  // 这个字段。
+  return { api: createCoreApi(deps), client: deps.client, getClient: () => deps.client, byokDeps };
 }
 
 const CORE_STATE_CHANGED_CHANNEL = "coreState:changed";
@@ -67,6 +146,25 @@ function broadcastState(core) {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send(CORE_STATE_CHANGED_CHANNEL, state);
   }
+}
+
+// 契约 §8.3：BYOK 三个 channel 禁止使用通用 invoke 的“catch 后原样
+// error.message”透传行为。byokKeyStore 里的三个函数本身设计为绝不 throw
+// （所有失败路径都归一到白名单 ByokFailure），这里再用独立的注册函数把它们
+// 完全隔离在通用 invoke 包装器之外，即便未来 byokKeyStore 实现变化，这三个
+// channel 结构上也不会落回“透传底层异常”的通用行为。
+function registerByokHandlers(core) {
+  const invokeByok = (methodName, handler) => {
+    ipcMain.handle(`coreApi:${methodName}`, async (_event, ...args) => {
+      const result = await handler(...args);
+      broadcastState(core);
+      return result;
+    });
+  };
+
+  invokeByok("saveAndVerifyByokKey", (request) => saveAndVerifyByokKeyImpl(core.byokDeps, request));
+  invokeByok("getByokKeyStatus", () => getByokKeyStatusImpl(core.byokDeps));
+  invokeByok("clearByokKey", () => clearByokKeyImpl(core.byokDeps));
 }
 
 function registerCoreApiHandlers(core) {
@@ -97,9 +195,11 @@ function registerCoreApiHandlers(core) {
   invoke("draftMaterial", (jobId) => core.api.draftMaterial(jobId));
   invoke("exportResume", (jobId) => core.api.exportResume(jobId));
   invoke("preScreenJob", (jobId, keywords) => core.api.preScreenJob(jobId, keywords));
-  invoke("diagnoseBatch", () => core.api.diagnoseBatch(core.client));
+  invoke("diagnoseBatch", () => core.api.diagnoseBatch(core.getClient()));
   invoke("clear", () => core.api.clear());
   invoke("addManualFact", (input) => core.api.addManualFact(input));
+
+  registerByokHandlers(core);
 }
 
 function isLoopbackAddress(address) {
@@ -261,34 +361,48 @@ function createMainWindow() {
   void mainWindow.loadFile(BUILT_RENDERER_ENTRY);
 }
 
-app.whenReady().then(async () => {
-  const core = createMainCoreApi();
-  registerCoreApiHandlers(core);
-  let apiError = null;
-  try {
-    await startJobApi(core);
-  } catch (error) {
-    jobApiState.status = "failed";
-    apiError = error;
-  }
-  const mainWindow = createMainWindow();
-  if (apiError) {
-    void dialog.showMessageBox(mainWindow, { type: "error", title: "本地 API 启动失败", message: apiError.message });
-  }
+// BYOK_MAIN_TEST_MODE：仅供 scripts/verify-byok-electron-integration.cjs 使用，
+// 跳过真实窗口/本地 API server 的自动启动，只把内部函数通过 module.exports
+// 暴露给验证脚本调用（见文件末尾 __test__）；正常应用启动路径不受影响。
+if (!process.env.BYOK_MAIN_TEST_MODE) {
+  app.whenReady().then(async () => {
+    const core = createMainCoreApi();
+    registerCoreApiHandlers(core);
+    let apiError = null;
+    try {
+      await startJobApi(core);
+    } catch (error) {
+      jobApiState.status = "failed";
+      apiError = error;
+    }
+    const mainWindow = createMainWindow();
+    if (apiError) {
+      void dialog.showMessageBox(mainWindow, { type: "error", title: "本地 API 启动失败", message: apiError.message });
+    }
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createMainWindow();
+      }
+    });
+  });
+
+  app.on("window-all-closed", () => {
+    if (process.platform !== "darwin") {
+      app.quit();
     }
   });
-});
 
-app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
-});
+  app.on("before-quit", () => {
+    void closeJobApi();
+  });
+}
 
-app.on("before-quit", () => {
-  void closeJobApi();
-});
+module.exports.__test__ = {
+  createMainCoreApi,
+  saveAndVerifyByokKey: saveAndVerifyByokKeyImpl,
+  getByokKeyStatus: getByokKeyStatusImpl,
+  clearByokKey: clearByokKeyImpl,
+  resolveActiveKeySource,
+  broadcastState
+};

@@ -22,6 +22,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const [state, setState] = useState<CoreState | null>(null)
   const [key, setKey] = useState('')
   const [keyStatus, setKeyStatus] = useState<KeyStatus>('empty')
+  const [keyError, setKeyError] = useState<string | null>(null)
   const [resumeInput, setResumeInput] = useState<ResumeInput | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [parseStatus, setParseStatus] = useState<ParseStatus>('idle')
@@ -65,10 +66,16 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     return skipped ? 'step-skip' : 'step-done'
   }
 
-  const verifyKey = () => {
-    if (!key.trim()) { setKeyStatus('failure'); return }
-    setKeyStatus('checking')
-    window.setTimeout(() => setKeyStatus(key.trim().toLowerCase() === 'invalid' ? 'failure' : 'success'), 900)
+  const verifyKey = async () => {
+    if (!key.trim()) { setKeyStatus('failure'); setKeyError('请输入 API Key。'); return }
+    setKeyStatus('checking'); setKeyError(null)
+    const result = await api.saveAndVerifyByokKey({ apiKey: key })
+    if (result.ok) {
+      setKeyStatus('success')
+    } else {
+      setKeyStatus('failure')
+      setKeyError(result.message)
+    }
   }
 
   const fileSelected = async (file?: File) => {
@@ -125,10 +132,10 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       {step === 1 && <>
         <h1 className="step-card-title">配置模型 Key</h1><p className="step-card-desc">填入你自己的模型服务 Key，用于后续简历解析与岗位评估。Key 仅保存在本地。</p>
         {keyStatus === 'success' && <div className="status-row"><span>✓</span> Key 验证成功，即将进入下一步…</div>}
-        {keyStatus === 'failure' && <div className="error-banner">验证失败：Key 无效或已过期，请检查后重新填写</div>}
-        <input className="wizard-input" type="password" value={key} disabled={keyStatus === 'checking' || keyStatus === 'success'} placeholder="输入模型服务 Key" onChange={event => { setKey(event.target.value); setKeyStatus('empty') }} />
+        {keyStatus === 'failure' && <div className="error-banner">{keyError ?? '验证失败：Key 无效或已过期，请检查后重新填写'}</div>}
+        <input className="wizard-input" type="password" value={key} disabled={keyStatus === 'checking' || keyStatus === 'success'} placeholder="输入模型服务 Key" onChange={event => { setKey(event.target.value); setKeyStatus('empty'); setKeyError(null) }} />
         {keyStatus === 'checking' && <p className="inline-loading"><span className="spinner" />正在验证 Key…</p>}
-        <div className="step-card-footer"><button className="text-button" disabled={keyStatus === 'checking'} onClick={() => window.open('https://bailian.console.aliyun.com/', '_blank')}>去阿里云获取 Key ↗</button><button className="primary-button" disabled={keyStatus === 'checking'} onClick={verifyKey}>{keyStatus === 'checking' ? '验证中…' : keyStatus === 'failure' ? '重新填写' : '验证并继续'}</button></div>
+        <div className="step-card-footer"><button className="text-button" disabled={keyStatus === 'checking'} onClick={() => window.open('https://bailian.console.aliyun.com/', '_blank')}>去阿里云获取 Key ↗</button><button className="primary-button" disabled={keyStatus === 'checking'} onClick={() => void verifyKey()}>{keyStatus === 'checking' ? '验证中…' : keyStatus === 'failure' ? '重新填写' : '验证并继续'}</button></div>
       </>}
       {step === 2 && <>
         <h1 className="step-card-title">上传简历</h1><p className="step-card-desc">仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
