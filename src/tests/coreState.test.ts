@@ -55,7 +55,8 @@ function buildPreferences(): CorePreferences {
       targetCities: ["上海"],
       minSalaryK: 20,
       excludedKeywords: ["外包"],
-      preferCompanyTags: ["SaaS"]
+      preferCompanyTags: ["SaaS"],
+        confidence: 1.0
     },
     riskSensitivity: {
       low: 3,

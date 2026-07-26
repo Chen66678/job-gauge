@@ -185,6 +185,7 @@ export interface PreferenceRuleSet {
   minSalaryK: number;
   excludedKeywords: string[];
   preferCompanyTags: string[];
+  confidence: number;
 }
 
 export interface WorkbenchData {

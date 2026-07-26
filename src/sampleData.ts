@@ -104,7 +104,8 @@ export const samplePreferences: PreferenceRuleSet = {
   targetCities: ["上海", "杭州"],
   minSalaryK: 12,
   excludedKeywords: ["培训", "收费", "无薪", "超长试岗"],
-  preferCompanyTags: ["工具", "教育科技", "AI", "SaaS"]
+  preferCompanyTags: ["工具", "教育科技", "AI", "SaaS"],
+  confidence: 1.0
 };
 
 export const sampleJobs: JobPosting[] = [

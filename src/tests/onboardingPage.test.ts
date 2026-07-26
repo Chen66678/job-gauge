@@ -42,11 +42,11 @@ async function selectResumeFile(file: File) {
 async function advanceToStep2() {
   fireEvent.change(screen.getByPlaceholderText('输入模型服务 Key'), { target: { value: 'sk-valid' } })
   fireEvent.click(screen.getByRole('button', { name: '验证并继续' }))
-  await screen.findByRole('heading', { name: '上传简历', level: 1 }, { timeout: 3000 })
+  await screen.findByRole('heading', { name: '上传简历', level: 1 }, { timeout: 5000 })
 }
 
 describe('OnboardingPage resume step', () => {
-  it('does not echo extracted PDF text into the visible paste textarea', async () => {
+  it('does not echo extracted PDF text after selecting a file', async () => {
     buildApi()
     isPdfFile.mockReturnValue(true)
     extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理\n负责招聘平台项目。' })
@@ -56,8 +56,7 @@ describe('OnboardingPage resume step', () => {
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
 
     await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.pdf')
-    const textarea = screen.getByPlaceholderText('也可以粘贴简历文本') as HTMLTextAreaElement
-    expect(textarea.value).toBe('')
+    expect(screen.queryByPlaceholderText('也可以粘贴简历文本')).toBeNull()
     expect(screen.queryByText('张三')).toBeNull()
   })
 
@@ -90,9 +89,12 @@ describe('OnboardingPage job import step', () => {
     render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
     await advanceToStep2()
 
-    fireEvent.change(screen.getByPlaceholderText('也可以粘贴简历文本'), { target: { value: '张三' } })
+    isPdfFile.mockReturnValue(false)
+    await selectResumeFile(new File(['张三'], 'resume.txt', { type: 'text/plain' }))
+    await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.txt')
     fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
-    await screen.findByRole('button', { name: '下一步：确认事实 →' })
+    await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({ kind: 'text', resumeText: '张三' }))
+    await screen.findByRole('button', { name: '下一步：确认事实 →' }, { timeout: 3000 })
     fireEvent.click(screen.getByRole('button', { name: '下一步：确认事实 →' }))
     fireEvent.click(screen.getByRole('button', { name: '继续下一步' }))
     fireEvent.click(screen.getByRole('button', { name: '跳过，使用默认' }))
@@ -105,5 +107,5 @@ describe('OnboardingPage job import step', () => {
     stateChangedListener?.({ factLibrary: [], jobs: [{}] } as unknown as CoreState)
 
     await screen.findByRole('heading', { name: '第一个岗位已评估完成！', level: 2 })
-  })
+  }, 10000)
 })

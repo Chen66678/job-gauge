@@ -88,7 +88,8 @@ export async function parsePreferences(input: {
       targetCities: soft.targetCities,
       minSalaryK: soft.minSalaryK,
       excludedKeywords: soft.excludedKeywords,
-      preferCompanyTags: soft.preferCompanyTags
+      preferCompanyTags: soft.preferCompanyTags,
+      confidence: 1.0
     },
     riskSensitivity: RISK_SENSITIVITY_BY_LEVEL[soft.riskSensitivity],
     hardVeto

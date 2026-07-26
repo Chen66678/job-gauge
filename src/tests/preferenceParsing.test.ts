@@ -63,7 +63,8 @@ describe("parsePreferences", () => {
       targetCities: ["杭州", "上海"],
       minSalaryK: 20,
       excludedKeywords: ["外包"],
-      preferCompanyTags: ["大厂"]
+      preferCompanyTags: ["大厂"],
+        confidence: 1.0
     });
     expect(result.riskSensitivity).toEqual({ low: 3, medium: 8, high: 16 });
     expect(result.hardVeto.rules).toEqual([]);
@@ -286,7 +287,8 @@ describe("parsePreferences", () => {
         targetCities: [],
         minSalaryK: 0,
         excludedKeywords: [],
-        preferCompanyTags: []
+        preferCompanyTags: [],
+        confidence: 1.0
       },
       riskSensitivity: { low: 3, medium: 8, high: 16 },
       hardVeto: { rules: [] }
@@ -297,7 +299,8 @@ describe("parsePreferences", () => {
         targetCities: [],
         minSalaryK: 0,
         excludedKeywords: [],
-        preferCompanyTags: []
+        preferCompanyTags: [],
+        confidence: 1.0
       },
       riskSensitivity: { low: 3, medium: 8, high: 16 },
       hardVeto: { rules: [] }

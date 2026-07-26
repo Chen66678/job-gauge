@@ -285,7 +285,8 @@ function isPreferenceRuleSet(value: unknown): value is PreferenceRuleSet {
     isStringArray(value.targetCities) &&
     typeof value.minSalaryK === "number" &&
     isStringArray(value.excludedKeywords) &&
-    isStringArray(value.preferCompanyTags)
+    isStringArray(value.preferCompanyTags) &&
+    typeof value.confidence === "number"
   );
 }
 

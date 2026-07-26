@@ -30,7 +30,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const [state, setState] = useState<CoreState | null>(null)
   const [key, setKey] = useState('')
   const [keyStatus, setKeyStatus] = useState<KeyStatus>('empty')
-  const [resumeText, setResumeText] = useState('')
   const [resumeInput, setResumeInput] = useState<ResumeInput | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [parseStatus, setParseStatus] = useState<ParseStatus>('idle')
@@ -96,11 +95,10 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   }
 
   const parseResume = async () => {
-    const input = resumeInput ?? (resumeText.trim() ? { kind: 'text' as const, resumeText: resumeText.trim() } : null)
-    if (!input) { setParseStatus('failure'); return }
+    if (!resumeInput) { setParseStatus('failure'); return }
     setParseStatus('parsing'); setError(null)
     try {
-      const facts = unwrap(await api.ingestResume(input))
+      const facts = unwrap(await api.ingestResume(resumeInput))
       setParseCount(facts.length); setParseStatus('success'); await refresh()
     } catch (reason) { setError(errorText(reason)); setParseStatus('failure') }
   }
@@ -146,7 +144,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
           <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF、图片或 TXT 简历到此处<br />或点击选择文件</button>
           <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt,image/*" onChange={event => void fileSelected(event.target.files?.[0])} />
           {selectedFileName && <p className="status-row">✓ 已选择文件：{selectedFileName}</p>}
-          <textarea className="wizard-textarea compact" placeholder="也可以粘贴简历文本" value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} />
           {parseStatus === 'parsing' && <p className="inline-loading"><span className="spinner" />解析中，勿关窗</p>}
           <div className="step-card-footer step-card-footer-single"><button className="primary-button" disabled={parseStatus === 'parsing'} onClick={() => void parseResume()}>解析简历</button></div>
         </>}
