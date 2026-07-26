@@ -226,6 +226,23 @@ describe("parsePreferences", () => {
     expect(findVetoHit(buildJob({ companyTags: ["SaaS"] }), keywordVeto)).toBeNull();
   });
 
+  it("skips city rules when the job city is unknown", () => {
+    const cityAllowlistVeto = {
+      rules: [
+        {
+          id: "veto-1-city-只去北京",
+          label: "只去北京",
+          kind: "city" as const,
+          mode: "allowlist" as const,
+          matchTerms: ["北京"],
+          evidence: "只去北京"
+        }
+      ]
+    };
+    expect(findVetoHit(buildJob({ city: "" }), cityAllowlistVeto)).toBeNull();
+    expect(findVetoHit(buildJob({ city: "  " }), cityAllowlistVeto)).toBeNull();
+  });
+
   it("parses blocklist city veto mode from model output", async () => {
     const client = createMockClient(
       JSON.stringify({

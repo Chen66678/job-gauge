@@ -3,6 +3,7 @@ import {
   type WorkbenchRepositoryBlobStore,
   assertSafeWorkbenchRepositoryData,
   collectSensitiveRepositoryFindings,
+  redactSecretValues,
   createFileBackedJsonWorkbenchRepository,
   createLocalStorageWorkbenchRepository,
   parseRepositoryEnvelope
@@ -133,5 +134,16 @@ describe("workbench repository scaffold", () => {
     });
 
     expect(() => assertSafeWorkbenchRepositoryData(unsafe)).toThrow("sensitive/raw evidence");
+  });
+
+  it("redactSecretValues strips secret-looking fragments so the text passes the sensitive scan", () => {
+    const text = "岗位职责\ntoken = abc123 secret\n要求 React，密钥形如 sk-abcdefgh1234。";
+    const redacted = redactSecretValues(text);
+
+    expect(collectSensitiveRepositoryFindings(redacted)).toEqual([]);
+    expect(redacted).toContain("岗位职责");
+    expect(redacted).toContain("要求 React");
+    expect(redacted).not.toContain("abc123");
+    expect(redacted).not.toContain("sk-abcdefgh1234");
   });
 });

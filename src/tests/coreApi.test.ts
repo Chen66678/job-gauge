@@ -236,6 +236,25 @@ describe("coreApi", () => {
     expect(api.getState().factLibrary).toEqual([{ ...fact, status: "confirmed" }]);
   });
 
+  it("re-ingesting the same resume keeps user confirmations for unchanged facts", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" });
+    orchestrationMocks.ingestResume
+      .mockResolvedValueOnce([fact])
+      .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" })])
+      .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "主导 React 架构升级" })]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    api.setFactStatus("fact-1", "confirmed");
+    // 同内容重传：确认状态保留。
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    expect(api.getState().factLibrary[0].status).toBe("confirmed");
+    // 内容变化：要求重新确认。
+    await api.ingestResume({ kind: "text", resumeText: "主导 React 架构升级。" });
+    expect(api.getState().factLibrary[0].status).toBe("unconfirmed");
+  });
+
   it("only passes confirmed facts into downstream evaluation", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
@@ -665,5 +684,30 @@ describe("reevaluateJob", () => {
     const missing = await api.reevaluateJob("job-does-not-exist");
     expect(missing).toBeNull();
     expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
+  });
+
+  it("does not clobber concurrent writes made while re-evaluation is in flight", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    const record = await api.evaluateJobFromJd({
+      jdText: "要求 React 组件开发。",
+      jobBase: { title: "前端工程师", company: "样例科技", city: "上海", salaryK: [20, 30], companyTags: [] }
+    });
+
+    let resolveEvaluation!: (value: { vetoed: false; score: ScoreResult }) => void;
+    orchestrationMocks.evaluateJob.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveEvaluation = resolve;
+      })
+    );
+    const reevaluation = api.reevaluateJob(record.job.id);
+    // 重评还在等模型时，用户置顶了该岗位。
+    api.setJobPinned(record.job.id, true);
+    resolveEvaluation({ vetoed: false, score: buildScoredResult(80, "personalize") });
+    await reevaluation;
+
+    const stored = api.getState().jobs.find((item) => item.job.id === record.job.id);
+    expect(stored?.job.pinned).toBe(true);
+    expect(stored?.evaluation).toEqual({ vetoed: false, score: buildScoredResult(80, "personalize") });
   });
 });

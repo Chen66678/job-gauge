@@ -84,8 +84,16 @@ export function upsertFacts(state: CoreState, facts: ProfileFact[]): CoreState {
     }
     const index = nextFactLibrary.findIndex((item) => item.id === fact.id);
     if (index >= 0) {
-      nextFactLibrary[index] = fact;
-      existingById.set(fact.id, fact);
+      // 重复抽取（如重传同一份简历）不得推翻用户已做过的确认/排除：
+      // 内容未变时保留原状态，内容变了才要求重新确认。
+      const keepUserDecision =
+        existing.value === fact.value &&
+        existing.category === fact.category &&
+        existing.status !== "unconfirmed" &&
+        fact.status === "unconfirmed";
+      const merged = keepUserDecision ? { ...fact, status: existing.status } : fact;
+      nextFactLibrary[index] = merged;
+      existingById.set(fact.id, merged);
     }
   }
 

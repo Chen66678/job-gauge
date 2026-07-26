@@ -110,6 +110,12 @@ function isAllowedOrigin(origin) {
   return typeof origin === "string" && /^(?:chrome|moz)-extension:\/\/[^/]+$/.test(origin);
 }
 
+// Host 头必须指向本机端口，阻断 DNS rebinding（浏览器解析攻击者域名到
+// 127.0.0.1 时，请求会带攻击者域名的 Host）。
+function isAllowedHost(host, port) {
+  return host === `127.0.0.1:${port}` || host === `localhost:${port}`;
+}
+
 function sendJson(response, statusCode, body, origin) {
   if (isAllowedOrigin(origin)) response.setHeader("Access-Control-Allow-Origin", origin);
   response.setHeader("Vary", "Origin");
@@ -145,8 +151,9 @@ async function startJobApi(core) {
   for (const port of JOB_API_PORTS) {
     const server = http.createServer(async (request, response) => {
       const origin = request.headers.origin;
+      if (!isAllowedHost(request.headers.host, port)) return sendJson(response, 403, { error: "forbidden host" });
+      if (origin && !isAllowedOrigin(origin)) return sendJson(response, 403, { error: "forbidden origin" });
       if (request.method === "OPTIONS" && request.url === "/api/jobs") {
-        if (origin && !isAllowedOrigin(origin)) return sendJson(response, 403, { error: "forbidden origin" });
         if (isAllowedOrigin(origin)) {
           response.setHeader("Access-Control-Allow-Origin", origin);
           response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");

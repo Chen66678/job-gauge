@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import type { PreferenceRuleSet } from './types'
-import type { CoreApiResult, WorkflowApi } from './WorkflowPage'
+import type { WorkflowApi } from './WorkflowPage'
+import { unwrap, errorText as message } from './coreApiResult'
 import './OnboardingPage.css'
-
-function unwrap<T>(result: CoreApiResult<T>): T { if (result && typeof result === 'object' && 'error' in result) throw new Error(result.error); return result as T }
-function message(reason: unknown) { return reason instanceof Error ? reason.message : String(reason) }
 
 type PreferenceCategory = 'role' | 'city' | 'salary' | 'exclude'
 type EditablePreferences = Record<PreferenceCategory, string[]>

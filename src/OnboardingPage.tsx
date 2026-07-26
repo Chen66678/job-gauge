@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import type { FactStatus, ProfileFact } from './types'
-import type { CoreApiResult, WorkflowApi } from './WorkflowPage'
+import type { WorkflowApi } from './WorkflowPage'
+import { unwrap, errorText } from './coreApiResult'
 import './OnboardingPage.css'
 
 type ResumeInput = { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }
@@ -14,15 +15,6 @@ type PluginStatus = 'missing' | 'disabled' | 'unauthorized' | 'ready' | 'send_fa
 
 const ONBOARDING_COMPLETE_KEY = 'onboardingCompleted'
 const STEPS = ['配 Key', '传简历', '确认事实', '设偏好', '检查插件', '导入岗位']
-
-function unwrap<T>(result: CoreApiResult<T>): T {
-  if (result && typeof result === 'object' && 'error' in result) throw new Error(result.error)
-  return result as T
-}
-
-function errorText(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
-}
 
 export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished: () => void; onOpenJobs: () => void }) {
   const api = window.coreApi as unknown as WorkflowApi

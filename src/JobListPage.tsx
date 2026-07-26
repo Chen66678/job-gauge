@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button, Tooltip } from 'antd'
+import { unwrap, errorText, type CoreApiResult } from './coreApiResult'
 
 type MockJob = {
   id: string
@@ -79,9 +80,9 @@ declare global {
   interface Window {
     coreApi: {
       getState: () => Promise<CoreState>
-      setJobPinned: (jobId: string, pinned: boolean) => Promise<void>
+      setJobPinned: (jobId: string, pinned: boolean) => Promise<CoreApiResult<void>>
       onStateChanged: (listener: (state: CoreState) => void) => () => void
-      reevaluateJob: (jobId: string) => Promise<unknown>
+      reevaluateJob: (jobId: string) => Promise<CoreApiResult<unknown>>
       evaluateJobFromJd: (input: {
         jdText: string
         jobBase: {
@@ -93,7 +94,7 @@ declare global {
           workAddress?: string | null
           sourceUrl?: string | null
         }
-      }) => Promise<unknown>
+      }) => Promise<CoreApiResult<unknown>>
     }
   }
 }
@@ -567,8 +568,8 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
       const target = prev.find(j => j.id === id)
       if (!target) return prev
       const nextPinned = !target.pinned
-      window.coreApi.setJobPinned(id, nextPinned).catch(reason => {
-        setError(reason instanceof Error ? reason.message : String(reason))
+      window.coreApi.setJobPinned(id, nextPinned).then(unwrap).catch(reason => {
+        setError(errorText(reason))
       })
       return prev.map(j => j.id === id ? { ...j, pinned: nextPinned } : j)
     })
@@ -589,8 +590,8 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
           workAddress: target.workAddress,
           sourceUrl: target.sourceUrl
         }
-      }).catch(reason => {
-        setError(reason instanceof Error ? reason.message : String(reason))
+      }).then(unwrap).catch(reason => {
+        setError(errorText(reason))
       })
       return prev
     })
@@ -599,12 +600,13 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   const handleReevaluate = useCallback((id: string) => {
     setReevaluatingJobIds(previous => new Set(previous).add(id))
     window.coreApi.reevaluateJob(id)
+      .then(unwrap)
       .then(() => setDeferredReevalJobIds(previous => {
         const next = new Set(previous)
         next.delete(id)
         return next
       }))
-      .catch(reason => setError(reason instanceof Error ? reason.message : String(reason)))
+      .catch(reason => setError(errorText(reason)))
       .finally(() => setReevaluatingJobIds(previous => {
         const next = new Set(previous)
         next.delete(id)

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact } from './types'
 import { OUTPUT_GATE_RELEASED } from './outputGateRelease'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
+import { unwrap, errorText as formatError, type CoreApiResult } from './coreApiResult'
 
 export type WorkflowStep =
   | 'UPLOAD_RESUME'
@@ -45,8 +46,6 @@ export type WorkflowState = {
   jobs: WorkflowJob[]
 }
 
-export type CoreApiResult<T> = T | { error: string }
-
 export type WorkflowApi = {
   getState: () => Promise<WorkflowState>
   onStateChanged: (listener: (state: WorkflowState) => void) => () => void
@@ -68,7 +67,7 @@ export type WorkflowApi = {
   reevaluateJob: (jobId: string) => Promise<CoreApiResult<WorkflowJob | null>>
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
   exportResume: (jobId: string) => Promise<CoreApiResult<string>>
-  addManualFact: (input: { content: string; category: string }) => Promise<void>
+  addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
 }
 
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [
@@ -80,17 +79,6 @@ const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: 'GENERATE', label: '生成材料' },
   { id: 'EXPORT', label: '导出' },
 ]
-
-function unwrap<T>(result: CoreApiResult<T>): T {
-  if (result && typeof result === 'object' && 'error' in result) {
-    throw new Error(result.error)
-  }
-  return result as T
-}
-
-function formatError(reason: unknown): string {
-  return reason instanceof Error ? reason.message : String(reason)
-}
 
 export async function reevaluateForWorkflow(api: WorkflowApi, jobId: string): Promise<WorkflowJob | null> {
   return unwrap(await api.reevaluateJob(jobId))
@@ -378,7 +366,7 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
 
   const addManualFact = () => run(async () => {
     if (!manualFactContent.trim()) throw new Error('请输入事实内容。')
-    await api.addManualFact({ content: manualFactContent.trim(), category: manualFactCategory })
+    unwrap(await api.addManualFact({ content: manualFactContent.trim(), category: manualFactCategory }))
     setManualFactContent('')
     await refreshState()
   })

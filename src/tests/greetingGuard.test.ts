@@ -7,13 +7,13 @@ const fact = (id: string, value: string, status: ProfileFact["status"] = "confir
 });
 
 describe("sanitizeGreeting", () => {
-  it("removes unsupported numbers and experience claims", () => {
-    expect(sanitizeGreeting("您好，我有 5 年经验，带来 30% 提升。", [fact("fact-1", "有 3 年经验")])).toBe("您好，我有 年经验，带来 提升。");
+  it("drops whole clauses containing unsupported numbers or experience claims", () => {
+    expect(sanitizeGreeting("您好，我有 5 年经验，带来 30% 提升。", [fact("fact-1", "有 3 年经验")])).toBe("您好。");
   });
 
   it("keeps hard facts supported by confirmed facts only", () => {
     expect(sanitizeGreeting("您好，我有 5 年经验。", [fact("fact-1", "有 5 年经验", "confirmed")])).toBe("您好，我有 5 年经验。");
-    expect(sanitizeGreeting("您好，我有 5 年经验。", [fact("fact-1", "有 5 年经验", "unconfirmed")])).toBe("您好，我有 年经验。");
+    expect(sanitizeGreeting("您好，我有 5 年经验。", [fact("fact-1", "有 5 年经验", "unconfirmed")])).toBe("您好。");
   });
 
   it("allows the current job company as a known hard fact", () => {

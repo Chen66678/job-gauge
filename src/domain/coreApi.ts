@@ -30,6 +30,7 @@ import {
   ingestResume
 } from "./orchestration";
 import type { LocalStorageLike } from "./storage";
+import { redactSecretValues } from "./workbenchRepository";
 
 interface BatchDiagnosisEnvelope {
   patternSummary?: unknown;
@@ -128,9 +129,16 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     addManualFact(input) {
       const content = input.content.trim();
       const category = input.category.trim();
-      const factNumber = state.factLibrary.length + 1;
+      // length + 1 会在删过事实后与既有 id 撞号，需查重递增。
+      const existingIds = new Set(state.factLibrary.map((fact) => fact.id));
+      let factNumber = state.factLibrary.length + 1;
+      let id = `fact-manual-${factNumber}-${slugify(`${category}-${content}`)}`;
+      while (existingIds.has(id)) {
+        factNumber += 1;
+        id = `fact-manual-${factNumber}-${slugify(`${category}-${content}`)}`;
+      }
       const fact: ProfileFact = {
-        id: `fact-manual-${factNumber}-${slugify(`${category}-${content}`)}`,
+        id,
         category,
         label: category,
         value: content,
@@ -175,6 +183,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     },
 
     async evaluateJobFromJd(input) {
+      const jdText = redactSecretValues(input.jdText);
       const baseJob = assembleJobPosting({
         base: {
           title: input.jobBase.title,
@@ -182,7 +191,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
           city: input.jobBase.city,
           salaryK: input.jobBase.salaryK,
           companyTags: input.jobBase.companyTags,
-          jdText: input.jdText,
+          jdText,
           workAddress: input.jobBase.workAddress,
           sourceUrl: input.jobBase.sourceUrl
         },
@@ -192,7 +201,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
 
       try {
         const parsedJd = await ingestJd({
-          jdText: input.jdText,
+          jdText,
           client: deps.client
         });
         const job = assembleJobPosting({
@@ -202,7 +211,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
             city: input.jobBase.city,
             salaryK: input.jobBase.salaryK,
             companyTags: input.jobBase.companyTags,
-            jdText: input.jdText,
+            jdText,
             workAddress: input.jobBase.workAddress,
             sourceUrl: input.jobBase.sourceUrl
           },
@@ -217,8 +226,11 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
           hardVeto: state.preferences?.hardVeto
         });
 
+        // await 之后必须基于当前 state 重取记录再合并，否则并发写入（置顶、
+        // 反问等）会被本次 await 前的旧快照覆盖。下同。
+        const previous = getJobRecord(state, job.id);
         const record: CoreJobRecord = {
-          job,
+          job: previous ? { ...job, pinned: previous.job.pinned } : job,
           evaluation: evaluation.vetoed
             ? {
                 vetoed: true,
@@ -238,14 +250,18 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         persist(upsertJobRecord(state, record));
         return getJobRecord(state, job.id) ?? record;
       } catch (error) {
-        const failedRecord: CoreJobRecord = {
-          job: baseJob,
-          evaluation: null,
-          evaluationError: error instanceof Error ? error.message : String(error),
-          followUps: [],
-          material: null,
-          updatedAt: new Date().toISOString()
-        };
+        const evaluationError = error instanceof Error ? error.message : String(error);
+        const previous = getJobRecord(state, baseJob.id);
+        const failedRecord: CoreJobRecord = previous
+          ? { ...previous, evaluationError, updatedAt: new Date().toISOString() }
+          : {
+              job: baseJob,
+              evaluation: null,
+              evaluationError,
+              followUps: [],
+              material: null,
+              updatedAt: new Date().toISOString()
+            };
         persist(upsertJobRecord(state, failedRecord));
         return getJobRecord(state, baseJob.id) ?? failedRecord;
       }
@@ -292,9 +308,10 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
           hardVeto: state.preferences?.hardVeto
         });
 
+        const fresh = getJobRecord(state, jobId) ?? record;
         persist(
           upsertJobRecord(state, {
-            ...record,
+            ...fresh,
             evaluation: evaluation.vetoed
               ? {
                   vetoed: true,
@@ -310,9 +327,10 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         );
         return getJobRecord(state, jobId);
       } catch (error) {
+        const fresh = getJobRecord(state, jobId) ?? record;
         persist(
           upsertJobRecord(state, {
-            ...record,
+            ...fresh,
             evaluationError: error instanceof Error ? error.message : String(error)
           })
         );
@@ -333,7 +351,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       });
       persist(
         upsertJobRecord(state, {
-          ...record,
+          ...(getJobRecord(state, jobId) ?? record),
           followUps: questions
         })
       );
@@ -394,7 +412,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       });
       persist(
         upsertJobRecord(state, {
-          ...record,
+          ...(getJobRecord(state, jobId) ?? record),
           material
         })
       );

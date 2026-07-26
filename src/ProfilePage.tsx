@@ -1,23 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { FactStatus, ProfileFact } from './types'
-import type { CoreApiResult, WorkflowApi, WorkflowState } from './WorkflowPage'
+import type { WorkflowApi, WorkflowState } from './WorkflowPage'
+import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import './ProfilePage.css'
 
 type ResumeInput = { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }
 type UndoState = { factId: string; previousStatus: FactStatus } | null
 
-function unwrap<T>(result: CoreApiResult<T>): T {
-  if (result && typeof result === 'object' && 'error' in result) throw new Error(result.error)
-  return result as T
-}
-
 function sourceLabel(sourceType: ProfileFact['sourceType']) {
   return sourceType === 'resume' ? '简历解析' : sourceType === 'user_answer' ? '反问补充' : '手动添加'
-}
-
-function formatError(reason: unknown) {
-  return reason instanceof Error ? reason.message : String(reason)
 }
 
 const Icon = ({ children, strokeWidth = 2 }: { children: ReactNode; strokeWidth?: number }) => (
@@ -135,7 +127,7 @@ export default function ProfilePage() {
     if (!content) return
     void run(async () => {
       unwrap(await api.setFactStatus(fact.id, 'rejected'))
-      await api.addManualFact({ content, category: fact.category })
+      unwrap(await api.addManualFact({ content, category: fact.category }))
       await refreshState()
       setEditingFactId(null)
       setEditingValue('')

@@ -103,6 +103,11 @@ export function findVetoHit(job: JobPosting, veto: HardVetoRules): HardVetoRule 
   for (const rule of veto.rules) {
     const terms = rule.matchTerms.map((term) => term.toLowerCase());
     if (rule.kind === "city") {
+      // 插件抓取的岗位 city 可能为空串；城市未知时跳过城市规则，
+      // 否则 allowlist 模式会误杀所有缺失城市的岗位。
+      if (!cityText.trim()) {
+        continue;
+      }
       const mode = rule.mode ?? "allowlist";
       if (mode === "allowlist") {
         if (terms.length > 0 && !terms.some((term) => cityText.includes(term))) {
