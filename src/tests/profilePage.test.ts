@@ -78,3 +78,26 @@ describe('ProfilePage resume upload', () => {
     expect(screen.queryByText((_, element) => element?.textContent === '已选择文件：resume.pdf')).toBeNull()
   })
 })
+
+describe('ProfilePage manual fact entry', () => {
+  it('is enabled (not the disabled "即将开放" placeholder) and calls addManualFact on submit', async () => {
+    const api = buildApi({ addManualFact: vi.fn(async () => undefined) })
+
+    render(createElement(ProfilePage))
+
+    expect(screen.queryByText('即将开放')).toBeNull()
+
+    fireEvent.change(screen.getByPlaceholderText('事实内容'), { target: { value: '熟悉 TypeScript' } })
+    fireEvent.click(screen.getByRole('button', { name: '添加' }))
+
+    await waitFor(() => expect(api.addManualFact).toHaveBeenCalledWith({ content: '熟悉 TypeScript', category: 'skill' }))
+  })
+
+  it('disables the submit button while the content input is empty', async () => {
+    buildApi({ addManualFact: vi.fn(async () => undefined) })
+
+    render(createElement(ProfilePage))
+
+    expect((screen.getByRole('button', { name: '添加' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
