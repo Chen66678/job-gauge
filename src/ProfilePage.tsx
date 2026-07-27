@@ -38,8 +38,6 @@ export default function ProfilePage() {
   const [editingValue, setEditingValue] = useState('')
   const [undo, setUndo] = useState<UndoState>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
-  const [manualFactContent, setManualFactContent] = useState('')
-  const [manualFactCategory, setManualFactCategory] = useState('skill')
   const undoTimerRef = useRef<number | null>(null)
   const saveMessageTimerRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -139,16 +137,6 @@ export default function ProfilePage() {
     })
   }
 
-  const addManualFact = () => {
-    const content = manualFactContent.trim()
-    if (!content) return
-    void run(async () => {
-      unwrap(await api.addManualFact({ content, category: manualFactCategory }))
-      await refreshState()
-      setManualFactContent('')
-    })
-  }
-
   const facts = state?.factLibrary ?? []
   const unconfirmedFacts = facts.filter(fact => fact.status === 'unconfirmed')
   const processedFacts = facts.filter(fact => fact.status !== 'unconfirmed')
@@ -190,7 +178,7 @@ export default function ProfilePage() {
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}
     {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{category}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
     {facts.length === 0 && !parsing && !parseError && <div className="empty-state facts-empty"><div className="empty-title">还没有可确认的事实</div><div className="empty-sub">上传并解析简历后，事实会按类别展示在这里。</div></div>}
-    <div className="manual-add"><div className="ma-icon">+</div><div className="ma-body"><div className="ma-title">手动添加事实</div><div className="ma-sub">手动录入的事实直接标记为已确认，参与后续评估</div><div className="manual-add-form"><input className="edit-textarea" style={{ minHeight: 'auto' }} value={manualFactContent} onChange={event => setManualFactContent(event.target.value)} placeholder="事实内容" aria-label="手动添加事实内容" /><select value={manualFactCategory} onChange={event => setManualFactCategory(event.target.value)} aria-label="事实分类"><option value="skill">技能</option><option value="work">工作经历</option><option value="education">教育</option><option value="achievement">成就</option><option value="certification">证书</option></select><button className="btn btn-primary" onClick={addManualFact} disabled={!manualFactContent.trim()}>添加</button></div></div></div>
+    <div className="manual-add" aria-disabled="true"><div className="ma-icon">+</div><div className="ma-body"><div className="ma-title">手动添加事实</div><div className="ma-sub">手动录入的事实直接标记为已确认，参与后续评估</div></div><span className="ma-tag">即将开放</span></div>
     {processedFacts.length > 0 && <div className="processed-section"><button className="processed-toggle" onClick={() => setProcessedOpen(open => !open)}>{processedOpen ? '⌄' : '›'} 已处理事实（{processedFacts.length}）</button>{processedOpen && <div className="processed-list">{processedFacts.map(fact => factCard(fact, true))}</div>}</div>}
     {undo && <div className="undo-toast" role="status"><CloseIcon /><span>已排除该事实</span><button className="ut-undo" onClick={undoReject}>撤销</button></div>}
     {saveMessage && <div className="undo-toast" role="status"><span>{saveMessage}</span></div>}
