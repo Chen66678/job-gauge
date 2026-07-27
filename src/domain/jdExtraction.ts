@@ -1,5 +1,6 @@
 import type { JobRequirement, JobRisk, RequirementKind, RiskSeverity } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
+import { isRecord, slugifyAsciiWithCjk, stripMarkdownFence } from "./shared";
 
 export interface JdExtractionInput {
   jdText: string;
@@ -172,12 +173,12 @@ function normalizeRisk(item: JdRiskItem): JdRiskItem | null {
 }
 
 function buildRequirementId(item: JdRequirementItem, index: number): string {
-  const slug = slugify(`${item.kind}-${item.label}`);
+  const slug = slugifyAsciiWithCjk(`${item.kind}-${item.label}`);
   return `req-jd-${index + 1}-${slug}`;
 }
 
 function buildRiskId(item: JdRiskItem, index: number): string {
-  const slug = slugify(item.label);
+  const slug = slugifyAsciiWithCjk(item.label);
   return `risk-jd-${index + 1}-${slug}`;
 }
 
@@ -192,20 +193,6 @@ function clampWeight(value: number): number {
     return 1;
   }
   return Number(value.toFixed(3));
-}
-
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
-}
-
-function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug || "item";
 }
 
 function emptyResult(): JdExtractionResult {
@@ -237,8 +224,4 @@ function isRequirementKind(value: unknown): value is RequirementKind {
 
 function isRiskSeverity(value: unknown): value is RiskSeverity {
   return typeof value === "string" && VALID_RISK_SEVERITIES.includes(value as RiskSeverity);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

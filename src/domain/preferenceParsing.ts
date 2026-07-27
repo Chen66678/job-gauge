@@ -1,6 +1,7 @@
 import type { JobPosting, PreferenceRuleSet } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import type { RiskSensitivity } from "./llmScoring";
+import { isRecord, slugifyAsciiWithCjk, stripMarkdownFence } from "./shared";
 
 export interface HardVetoRule {
   id: string;
@@ -257,13 +258,8 @@ function normalizeVetoMode(value: unknown): HardVetoRule["mode"] {
 }
 
 function buildHardVetoId(item: VetoItem, index: number): string {
-  const slug = slugify(`${item.kind}-${item.label}`);
+  const slug = slugifyAsciiWithCjk(`${item.kind}-${item.label}`);
   return `veto-${index + 1}-${slug}`;
-}
-
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
 }
 
 function parseNumberish(value: unknown): number {
@@ -279,17 +275,4 @@ function parseNumberish(value: unknown): number {
 
 function toStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
-
-function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug || "item";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

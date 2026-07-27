@@ -1,3 +1,5 @@
+import { isRecord } from "./shared";
+
 export type LlmClientErrorCode =
   | "timeout"
   | "auth_failed"
@@ -262,6 +264,3 @@ function isChatCompletionsResponse(value: unknown): value is ChatCompletionsResp
   );
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}

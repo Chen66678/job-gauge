@@ -1,5 +1,6 @@
 import type { JobPosting, ProfileFact, RequirementResult, ScoreResult } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
+import { clampConfidence, isRecord, slugifyAsciiWithCjk, stripMarkdownFence } from "./shared";
 
 export interface FollowUpQuestion {
   id: string;
@@ -399,40 +400,13 @@ function buildResumeQuestionUserPrompt(facts: ProfileFact[], limit: number): str
 }
 
 function buildQuestionId(item: { requirementId: string; question: string }, index: number): string {
-  const slug = slugify(`${item.requirementId}-${item.question}`);
+  const slug = slugifyAsciiWithCjk(`${item.requirementId}-${item.question}`);
   return `followup-q-${index + 1}-${slug}`;
 }
 
 function buildFactId(item: FollowUpFactItem, index: number): string {
-  const slug = slugify(`${item.category}-${item.label}`);
+  const slug = slugifyAsciiWithCjk(`${item.category}-${item.label}`);
   return `fact-followup-${index + 1}-${slug}`;
-}
-
-function clampConfidence(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 1) {
-    return 1;
-  }
-  return Number(value.toFixed(3));
-}
-
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
-}
-
-function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug || "item";
 }
 
 function isQuestionItem(value: unknown): value is FollowUpQuestionItem {
@@ -454,8 +428,4 @@ function isFactItem(value: unknown): value is FollowUpFactItem {
     typeof value.confidence === "number" &&
     typeof value.fromQuestionId === "string"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

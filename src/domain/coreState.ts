@@ -12,6 +12,7 @@ import type { HardVetoRules } from "./preferenceParsing";
 import type { RiskSensitivity } from "./llmScoring";
 import { type LocalStorageLike } from "./storage";
 import { collectSensitiveRepositoryFindings } from "./workbenchRepository";
+import { isRecord } from "./shared";
 
 export const CORE_STATE_STORAGE_KEY = "boss-local-core-state:v1";
 
@@ -465,8 +466,4 @@ function isJobRisk(value: unknown): boolean {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

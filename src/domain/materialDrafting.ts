@@ -1,6 +1,7 @@
 import type { JobPosting, MaterialPreview, ProfileFact, RequirementResult, ScoreResult, UserProfile } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import { getConfirmedFacts, toFactTrace } from "./facts";
+import { isRecord, stripMarkdownFence } from "./shared";
 
 interface MaterialDraftEnvelope {
   greeting: string;
@@ -187,15 +188,6 @@ function unique(values: string[]): string[] {
   return [...new Set(values)];
 }
 
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
-}
-
 function isProfileFact(fact: ProfileFact | undefined): fact is ProfileFact {
   return Boolean(fact);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

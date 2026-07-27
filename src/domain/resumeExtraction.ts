@@ -1,5 +1,6 @@
 import type { ProfileFact } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
+import { clampConfidence, isRecord, slugifyAsciiWithCjk, stripMarkdownFence } from "./shared";
 
 export type ResumeExtractionInput =
   | {
@@ -148,35 +149,8 @@ function normalizeFactItem(item: ResumeFactItem): ResumeFactItem | null {
 }
 
 function buildFactId(item: ResumeFactItem, index: number): string {
-  const slug = slugify(`${item.category}-${item.label}`);
+  const slug = slugifyAsciiWithCjk(`${item.category}-${item.label}`);
   return `fact-resume-${index + 1}-${slug}`;
-}
-
-function clampConfidence(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 1) {
-    return 1;
-  }
-  return Number(value.toFixed(3));
-}
-
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
-}
-
-function slugify(value: string): string {
-  const slug = value
-    .toLowerCase()
-    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return slug || "item";
 }
 
 function isResumeFactItem(value: unknown): value is ResumeFactItem {
@@ -187,8 +161,4 @@ function isResumeFactItem(value: unknown): value is ResumeFactItem {
     typeof value.value === "string" &&
     typeof value.confidence === "number"
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

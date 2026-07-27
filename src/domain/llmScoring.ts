@@ -10,6 +10,7 @@ import type {
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import { getConfirmedFacts } from "./facts";
 import { STRATEGY_LABELS, classifyStrategy, summarizeStrategy } from "./scoring";
+import { isRecord, stripMarkdownFence } from "./shared";
 
 export type RiskSensitivity = Record<RiskSeverity, number>;
 
@@ -238,11 +239,6 @@ function buildGap(matchLevel: MatchLevel): string | null {
   return "缺少匹配证据";
 }
 
-function stripMarkdownFence(value: string): string {
-  const match = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-  return match?.[1]?.trim() ?? value;
-}
-
 function round3(value: number): number {
   return Number(value.toFixed(3));
 }
@@ -264,8 +260,4 @@ function isMatchItem(value: unknown): value is MatchItem {
 
 function isMatchLevel(value: unknown): value is MatchLevel {
   return value === "none" || value === "implied" || value === "direct";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
