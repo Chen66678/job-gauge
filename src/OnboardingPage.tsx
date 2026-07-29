@@ -6,7 +6,7 @@ import type { WorkflowApi } from './WorkflowPage'
 import { unwrap, errorText } from './coreApiResult'
 import './OnboardingPage.css'
 
-type ResumeInput = { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }
+type ResumeInput = { kind: 'text'; resumeText: string }
 type Step = 1 | 2 | 3 | 4 | 5 | 6
 type KeyStatus = 'empty' | 'checking' | 'success' | 'failure'
 type ParseStatus = 'idle' | 'parsing' | 'success' | 'failure'
@@ -83,9 +83,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     setError(null)
     try {
       if (isPdfFile(file)) {
-        const extracted = await extractPdfResume(file)
-        if (extracted.kind === 'text') setResumeInput({ kind: 'text', resumeText: extracted.resumeText })
-        else setResumeInput({ kind: 'image', imageBase64: extracted.imageBase64, mimeType: extracted.mimeType })
+        setResumeInput({ kind: 'text', resumeText: await extractPdfResume(file) })
       } else {
         setResumeInput({ kind: 'text', resumeText: await file.text() })
       }
@@ -140,8 +138,8 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       {step === 2 && <>
         <h1 className="step-card-title">上传简历</h1><p className="step-card-desc">仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
         {parseStatus === 'success' ? <><div className="status-row">✓ 解析成功，提取到 {parseCount} 条事实</div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(3)}>下一步：确认事实 →</button></div></> : <>
-          <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF、图片或 TXT 简历到此处<br />或点击选择文件</button>
-          <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt,image/*" onChange={event => void fileSelected(event.target.files?.[0])} />
+          <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF 或 TXT 简历到此处<br />或点击选择文件</button>
+          <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt" onChange={event => void fileSelected(event.target.files?.[0])} />
           {selectedFileName && <p className="status-row">✓ 已选择文件：{selectedFileName}</p>}
           {parseStatus === 'parsing' && <p className="inline-loading"><span className="spinner" />解析中，勿关窗</p>}
           <div className="step-card-footer step-card-footer-single"><button className="primary-button" disabled={parseStatus === 'parsing'} onClick={() => void parseResume()}>解析简历</button></div>

@@ -40,7 +40,7 @@ describe('ProfilePage resume upload', () => {
   it('does not echo extracted PDF text into the visible paste textarea', async () => {
     buildApi()
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理\n负责招聘平台项目。' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理\n负责招聘平台项目。')
 
     render(createElement(ProfilePage))
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
@@ -54,7 +54,7 @@ describe('ProfilePage resume upload', () => {
   it('still sends the extracted text to ingestResume on submit', async () => {
     const api = buildApi()
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理')
 
     render(createElement(ProfilePage))
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
@@ -68,7 +68,7 @@ describe('ProfilePage resume upload', () => {
   it('clears the selected-file indicator once the user types into the textarea', async () => {
     buildApi()
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三' })
+    extractPdfResume.mockResolvedValue('张三')
 
     render(createElement(ProfilePage))
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact } from './types'
-import { OUTPUT_GATE_RELEASED } from './outputGateRelease'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import { unwrap, errorText as formatError, type CoreApiResult } from './coreApiResult'
 import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, SaveAndVerifyByokKeyResult } from './domain/byokKeyStore'
@@ -8,7 +7,6 @@ import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, Sa
 export type WorkflowStep =
   | 'UPLOAD_RESUME'
   | 'RESUME_FOLLOW_UP'
-  | 'CONFIRM_FACTS'
   | 'SCORING'
   | 'JOB_FOLLOW_UP'
   | 'GENERATE'
@@ -50,7 +48,7 @@ export type WorkflowState = {
 export type WorkflowApi = {
   getState: () => Promise<WorkflowState>
   onStateChanged: (listener: (state: WorkflowState) => void) => () => void
-  ingestResume: (input: { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }) => Promise<CoreApiResult<ProfileFact[]>>
+  ingestResume: (input: { kind: 'text'; resumeText: string }) => Promise<CoreApiResult<ProfileFact[]>>
   setFactStatus: (factId: string, status: FactStatus) => Promise<CoreApiResult<void>>
   setFactStatusBatch: (updates: { factId: string; status: FactStatus }[]) => Promise<CoreApiResult<void>>
   setPreferencesFromText: (input: { acceptText: string; vetoText: string }) => Promise<CoreApiResult<unknown>>
@@ -69,6 +67,8 @@ export type WorkflowApi = {
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
   exportResume: (jobId: string) => Promise<CoreApiResult<string>>
   addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
+  clearFactLibrary: () => Promise<CoreApiResult<void>>
+  deleteFact: (factId: string) => Promise<CoreApiResult<void>>
   saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
   getByokKeyStatus: () => Promise<ByokKeyStatus>
   clearByokKey: () => Promise<ClearByokKeyResult>
@@ -78,7 +78,6 @@ export type WorkflowApi = {
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: 'UPLOAD_RESUME', label: '上传简历' },
   { id: 'RESUME_FOLLOW_UP', label: '简历追问' },
-  { id: 'CONFIRM_FACTS', label: '确认事实' },
   { id: 'SCORING', label: '岗位评分' },
   { id: 'JOB_FOLLOW_UP', label: '岗位追问' },
   { id: 'GENERATE', label: '生成材料' },
@@ -98,24 +97,6 @@ export async function prepareScoringAfterConfirmation(input: {
   return reevaluateForWorkflow(input.api, input.jobId)
 }
 
-export async function continueAfterFactConfirmationForWorkflow(input: {
-  api: WorkflowApi
-  jobId: string | null
-  nextStep: 'SCORING' | 'GENERATE'
-  hasExistingEvaluation: boolean
-  hasNewConfirmedFacts: boolean
-}): Promise<'SCORING' | 'GENERATE'> {
-  if (input.nextStep === 'GENERATE') {
-    if (!input.jobId) throw new Error('缺少待重评岗位。')
-    if (input.hasNewConfirmedFacts) {
-      await reevaluateForWorkflow(input.api, input.jobId)
-    }
-    return 'GENERATE'
-  }
-  await prepareScoringAfterConfirmation(input)
-  return 'SCORING'
-}
-
 export function getReevaluationWarning(job: WorkflowJob | null): string | null {
   return job?.evaluationError
     ? `重评失败，当前展示的是上一次的分数：${job.evaluationError}`
@@ -127,7 +108,7 @@ export async function submitJobFollowUpsForWorkflow(input: {
   jobId: string
   questions: FollowUpQuestion[]
   answers: Record<string, string>
-}): Promise<{ newFacts: ProfileFact[]; nextStep: 'CONFIRM_FACTS' | 'GENERATE' }> {
+}): Promise<{ newFacts: ProfileFact[]; hadNewFacts: boolean }> {
   const answerList = input.questions.map(question => ({
     questionId: question.id,
     answerText: input.answers[question.id]?.trim() ?? '',
@@ -135,10 +116,7 @@ export async function submitJobFollowUpsForWorkflow(input: {
   const newFacts = answerList.some(item => item.answerText)
     ? unwrap(await input.api.applyFollowUpAnswers(input.jobId, answerList))
     : []
-  return {
-    newFacts,
-    nextStep: newFacts.length > 0 ? 'CONFIRM_FACTS' : 'GENERATE',
-  }
+  return { newFacts, hadNewFacts: newFacts.length > 0 }
 }
 
 export default function WorkflowPage({ selectedJobId: propJobId, initialStep, onOpenProfile }: { selectedJobId?: string | null; initialStep?: WorkflowStep; onOpenProfile?: () => void }) {
@@ -147,7 +125,6 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
   const [state, setState] = useState<WorkflowState | null>(null)
   const [resumeText, setResumeText] = useState('')
   const [resumeFileText, setResumeFileText] = useState<string | null>(null)
-  const [resumeImage, setResumeImage] = useState<{ base64: string; mimeType: string } | null>(null)
   const [selectedResumeFileName, setSelectedResumeFileName] = useState<string | null>(null)
   const [jdText, setJdText] = useState('')
   const [jobTitle, setJobTitle] = useState('产品经理')
@@ -162,20 +139,14 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
   const [material, setMaterial] = useState<MaterialPreview | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [manualFactContent, setManualFactContent] = useState('')
-  const [manualFactCategory, setManualFactCategory] = useState('skill')
   const [activeJobId, setActiveJobId] = useState<string | null>(propJobId ?? null)
   const activeJobIdRef = useRef<string | null>(propJobId ?? null)
   const previousPropJobIdRef = useRef(propJobId)
-  const [confirmationNextStep, setConfirmationNextStep] = useState<'SCORING' | 'GENERATE'>('SCORING')
-  const [pendingReevaluationJobId, setPendingReevaluationJobId] = useState<string | null>(null)
   const [generationJobId, setGenerationJobId] = useState<string | null>(null)
   const [followUpIndex, setFollowUpIndex] = useState(0)
   const [followUpSubmitting, setFollowUpSubmitting] = useState(false)
   const [followUpSubmitError, setFollowUpSubmitError] = useState<string | null>(null)
   const [followUpSuccess, setFollowUpSuccess] = useState(false)
-  const [postFollowUpStep, setPostFollowUpStep] = useState<'CONFIRM_FACTS' | 'GENERATE'>('GENERATE')
-  const confirmedFactIdsAtConfirmEntryRef = useRef<Set<string>>(new Set())
 
   if (previousPropJobIdRef.current !== propJobId) {
     previousPropJobIdRef.current = propJobId
@@ -195,7 +166,6 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
   useEffect(() => {
     activeJobIdRef.current = propJobId ?? null
     setActiveJobId(propJobId ?? null)
-    setPendingReevaluationJobId(null)
     setGenerationJobId(null)
   }, [propJobId])
 
@@ -234,14 +204,10 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
   const uploadResume = () => run(async () => {
     const typedText = resumeText.trim()
     const fileText = resumeFileText?.trim()
-    if (!typedText && !fileText && !resumeImage) {
+    if (!typedText && !fileText) {
       throw new Error('请先输入简历文本或选择简历文件。')
     }
-    const input = typedText
-      ? { kind: 'text' as const, resumeText: typedText }
-      : fileText
-        ? { kind: 'text' as const, resumeText: fileText }
-        : { kind: 'image' as const, imageBase64: resumeImage!.base64, mimeType: resumeImage!.mimeType }
+    const input = { kind: 'text' as const, resumeText: typedText || fileText! }
     unwrap(await api.ingestResume(input))
     // 简历阶段追问：针对刚抽取的整个事实库，不绑定岗位。
     const resumeQuestions = unwrap(await api.buildResumeFollowUps())
@@ -259,35 +225,10 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
     if (answerList.some(item => item.answerText)) {
       unwrap(await api.applyResumeFollowUpAnswers(questions, answerList))
     }
-    const next = await refreshState()
-    confirmedFactIdsAtConfirmEntryRef.current = new Set(
-      next.factLibrary.filter(fact => fact.status === 'confirmed').map(fact => fact.id),
-    )
-    setConfirmationNextStep('SCORING')
-    setPendingReevaluationJobId(null)
-    setStep('CONFIRM_FACTS')
-  })
-
-  const continueAfterFactConfirmation = () => run(async () => {
-    if (unconfirmedFacts.length > 0) {
-      throw new Error('请先确认或否掉全部待确认事实。')
-    }
-    const targetJobId = confirmationNextStep === 'GENERATE' ? pendingReevaluationJobId : jobId
-    const hasNewConfirmedFacts = (state?.factLibrary ?? []).some(
-      fact => fact.status === 'confirmed' && !confirmedFactIdsAtConfirmEntryRef.current.has(fact.id),
-    )
-    const nextStep = await continueAfterFactConfirmationForWorkflow({
-      api,
-      jobId: targetJobId,
-      nextStep: confirmationNextStep,
-      hasExistingEvaluation: Boolean(currentJob?.evaluation),
-      hasNewConfirmedFacts,
-    })
     await refreshState()
-    if (!targetJobId || activeJobIdRef.current !== targetJobId) return
-    setGenerationJobId(nextStep === 'GENERATE' ? targetJobId : null)
-    setPendingReevaluationJobId(null)
-    setStep(nextStep)
+    await prepareScoringAfterConfirmation({ api, jobId, hasExistingEvaluation: Boolean(currentJob?.evaluation) })
+    await refreshState()
+    setStep('SCORING')
   })
 
   const scoreJob = () => run(async () => {
@@ -335,20 +276,12 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
     try {
       const targetJobId = jobId
       const result = await submitJobFollowUpsForWorkflow({ api, jobId: targetJobId, questions, answers })
-      const next = await refreshState()
-      if (activeJobIdRef.current !== targetJobId) return
-      if (result.nextStep === 'CONFIRM_FACTS') {
-        confirmedFactIdsAtConfirmEntryRef.current = new Set(
-          next.factLibrary.filter(fact => fact.status === 'confirmed').map(fact => fact.id),
-        )
-        setConfirmationNextStep('GENERATE')
-        setPendingReevaluationJobId(targetJobId)
-        setGenerationJobId(null)
-      } else {
-        setPendingReevaluationJobId(null)
-        setGenerationJobId(targetJobId)
+      if (result.hadNewFacts && activeJobIdRef.current === targetJobId) {
+        await reevaluateForWorkflow(api, targetJobId)
       }
-      setPostFollowUpStep(result.nextStep)
+      await refreshState()
+      if (activeJobIdRef.current !== targetJobId) return
+      setGenerationJobId(targetJobId)
       setFollowUpSuccess(true)
     } catch (reason) {
       setFollowUpSubmitError(formatError(reason))
@@ -356,25 +289,6 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
       setFollowUpSubmitting(false)
     }
   }
-
-  const updateFact = (factId: string, status: FactStatus) => run(async () => {
-    unwrap(await api.setFactStatus(factId, status))
-    await refreshState()
-  })
-
-  const confirmAllFacts = () => run(async () => {
-    if (unconfirmedFacts.length === 0) return
-    const updates = unconfirmedFacts.map(fact => ({ factId: fact.id, status: 'confirmed' as FactStatus }))
-    unwrap(await api.setFactStatusBatch(updates))
-    await refreshState()
-  })
-
-  const addManualFact = () => run(async () => {
-    if (!manualFactContent.trim()) throw new Error('请输入事实内容。')
-    unwrap(await api.addManualFact({ content: manualFactContent.trim(), category: manualFactCategory }))
-    setManualFactContent('')
-    await refreshState()
-  })
 
   const loadFollowUps = () => run(async () => {
     const targetJobId = activeJobIdRef.current ?? jobId
@@ -422,33 +336,13 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
 
   const fileSelected = async (file: File | undefined) => {
     if (!file) return
-    if (file.type.startsWith('image/')) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        const dataUrl = String(reader.result ?? '')
-        const [, base64 = ''] = dataUrl.split(',', 2)
-        setResumeImage({ base64, mimeType: file.type })
-        setResumeFileText(null)
-        setSelectedResumeFileName(file.name)
-      }
-      reader.readAsDataURL(file)
-      return
-    }
     try {
       if (isPdfFile(file)) {
-        const extracted = await extractPdfResume(file)
-        if (extracted.kind === 'text') {
-          setResumeFileText(extracted.resumeText)
-          setResumeImage(null)
-        } else {
-          setResumeFileText(null)
-          setResumeImage({ base64: extracted.imageBase64, mimeType: extracted.mimeType })
-        }
+        setResumeFileText(await extractPdfResume(file))
         setSelectedResumeFileName(file.name)
         return
       }
       setResumeFileText(await file.text())
-      setResumeImage(null)
       setSelectedResumeFileName(file.name)
     } catch (reason) {
       setError(formatError(reason))
@@ -489,8 +383,8 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
           <h2>上传简历</h2>
           <p>仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
           {selectedResumeFileName && <p role="status">✓ 已选择文件：{selectedResumeFileName}</p>}
-          <textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeFileText(null); setResumeImage(null); setSelectedResumeFileName(null) }} placeholder="粘贴简历文本" rows={12} />
-          <input type="file" accept=".txt,.md,.pdf,image/*" onChange={event => fileSelected(event.target.files?.[0])} />
+          <textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeFileText(null); setSelectedResumeFileName(null) }} placeholder="粘贴简历文本" rows={12} />
+          <input type="file" accept=".txt,.md,.pdf" onChange={event => fileSelected(event.target.files?.[0])} />
           <button onClick={uploadResume} disabled={loading}>下一步</button>
         </div>
       )}
@@ -570,84 +464,25 @@ export default function WorkflowPage({ selectedJobId: propJobId, initialStep, on
           onNext={() => setFollowUpIndex(index => Math.min(questions.length - 1, index + 1))}
           onSkip={() => setFollowUpIndex(index => index < questions.length - 1 ? index + 1 : index)}
           onSubmit={() => void submitJobFollowUps()}
-          onClose={() => setStep(followUpSuccess ? postFollowUpStep : 'SCORING')}
-          onOpenProfile={() => { setStep(postFollowUpStep); onOpenProfile?.() }}
+          onClose={() => setStep(followUpSuccess ? 'GENERATE' : 'SCORING')}
+          onOpenProfile={() => { setStep('GENERATE'); onOpenProfile?.() }}
         />
-      )}
-
-      {step === 'CONFIRM_FACTS' && (
-        <div className="workflow-panel">
-          <h2>确认事实</h2>
-          <p>以下事实来自简历或追问，逐条确认后再去岗位评分——只有已确认的事实才参与匹配。</p>
-          {unconfirmedFacts.length > 0 && (
-            <button onClick={confirmAllFacts} disabled={loading} style={{ marginBottom: 8 }}>全部确认</button>
-          )}
-          {unconfirmedFacts.length === 0 && (
-            <p>{confirmationNextStep === 'SCORING' ? '没有待确认事实，可以进入岗位评分。' : '待确认事实已处理，可以重评并进入生成步骤。'}</p>
-          )}
-          {unconfirmedFacts.map(fact => (
-            <div key={fact.id} className="workflow-fact">
-              <span><strong>{fact.label}</strong>：{fact.value}</span>
-              <span className="workflow-fact-actions">
-                <button onClick={() => updateFact(fact.id, 'confirmed')} disabled={loading}>确认</button>
-                <button onClick={() => updateFact(fact.id, 'rejected')} disabled={loading}>否掉</button>
-              </span>
-            </div>
-          ))}
-          <div className="workflow-add-fact" style={{ marginTop: 16, borderTop: '1px solid var(--gray-border, #eee)', paddingTop: 12 }}>
-            <strong>手动添加事实</strong>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-              <input
-                value={manualFactContent}
-                onChange={event => setManualFactContent(event.target.value)}
-                placeholder="事实内容"
-                style={{ flex: 1, minWidth: 160 }}
-              />
-              <select value={manualFactCategory} onChange={event => setManualFactCategory(event.target.value)}>
-                <option value="skill">技能</option>
-                <option value="work">工作经历</option>
-                <option value="education">教育</option>
-                <option value="achievement">成就</option>
-                <option value="certification">证书</option>
-              </select>
-              <button onClick={addManualFact} disabled={loading || !manualFactContent.trim()}>添加</button>
-            </div>
-          </div>
-          <button onClick={continueAfterFactConfirmation} disabled={loading || unconfirmedFacts.length > 0} style={{ marginTop: 12 }}>
-            {confirmationNextStep === 'SCORING' ? '下一步：岗位评分' : '下一步：重评并生成'}
-          </button>
-        </div>
       )}
 
       {step === 'GENERATE' && (
         <div className="workflow-panel">
           <h2>生成材料</h2>
-          {OUTPUT_GATE_RELEASED ? (
-            <>
-              <p>确认事实后生成定制简历。</p>
-              <button onClick={generateMaterial} disabled={loading || unconfirmedFacts.length > 0}>生成</button>
-            </>
-          ) : (
-            <>
-              <p role="note" className="workflow-gate-locked">生成功能待开启（形式规范过审后激活）</p>
-              <button onClick={() => setStep('EXPORT')} disabled={loading}>下一步</button>
-            </>
-          )}
+          <p>确认事实后生成定制简历。</p>
+          <button onClick={generateMaterial} disabled={loading || unconfirmedFacts.length > 0}>生成</button>
         </div>
       )}
 
       {step === 'EXPORT' && (
         <div className="workflow-panel">
           <h2>导出</h2>
-          {OUTPUT_GATE_RELEASED ? (
-            <>
-              {material?.status === 'blocked' && <p>材料生成被阻止。</p>}
-              {material && <pre className="workflow-material">{[material.greeting, ...material.resumeLines.map((line) => line.text)].filter(Boolean).join('\n')}</pre>}
-              <button onClick={exportMaterial} disabled={!material || material.status === 'blocked'}>导出文本</button>
-            </>
-          ) : (
-            <p role="note" className="workflow-gate-locked">导出功能待开启（形式规范过审后激活）</p>
-          )}
+          {material?.status === 'blocked' && <p>材料生成被阻止。</p>}
+          {material && <pre className="workflow-material">{[material.greeting, ...material.resumeLines.map((line) => line.text)].filter(Boolean).join('\n')}</pre>}
+          <button onClick={exportMaterial} disabled={!material || material.status === 'blocked'}>导出文本</button>
         </div>
       )}
     </section>

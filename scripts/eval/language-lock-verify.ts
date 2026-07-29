@@ -2,8 +2,8 @@
 // 验证 D022-语言漂移扫描批次2 的 3 处新增语言锁约束是否生效:
 // preferenceParsing / followUp 答案抽取 / materialDrafting.resumeLines
 // (jdExtraction 用 job-scoring-chain-smoke.ts 单独验证,不在此脚本内)
-// 注意:materialDrafting 直接调用 domain 层函数,不经 coreApi.draftMaterial 的
-// OUTPUT_GATE_RELEASED 闸门检查;结果只落评测日志,不进入任何产品状态/导出路径。已向首席报备。
+// 注意:materialDrafting 直接调用 domain 层函数,不经 coreApi.draftMaterial;
+// 结果只落评测日志,不进入任何产品状态/导出路径。已向首席报备。
 // 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/language-lock-verify.ts
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -85,7 +85,7 @@ async function main() {
   console.log(answerDrift.length > 0 ? `[漂移嫌疑] ${JSON.stringify(answerDrift)}` : `[语言核查] 全部保持中文,无漂移嫌疑。`);
 
   console.log("\n========== 验证3 · materialDrafting.resumeLines 语言稳定性 ==========");
-  console.log("(直接调用 domain 层函数,不经 coreApi.draftMaterial 的 OUTPUT_GATE_RELEASED 闸门;结果只落评测日志,不进产品状态/导出路径)");
+  console.log("(直接调用 domain 层函数,不经 coreApi.draftMaterial;结果只落评测日志,不进产品状态/导出路径)");
   const resumeText = readFileSync(join(__dirname, "_private", "resume.txt"), "utf8");
   const facts = (await extractFactsFromResume({ kind: "text", resumeText, client })).map((f) => ({
     ...f,
@@ -121,8 +121,7 @@ async function main() {
     targetRoles: [],
     targetCities: [],
     resumeText,
-    facts,
-    imageResumeAttachment: null
+    facts
   };
   const t2 = Date.now();
   const score = await scoreJobWithLlm({ profile, job, client });

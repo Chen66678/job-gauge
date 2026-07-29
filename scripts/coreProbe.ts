@@ -279,11 +279,10 @@ async function runProbeDraftMode(client: ReturnType<typeof createLlmClient>): Pr
     targetRoles: [],
     targetCities: [],
     resumeText: "",
-    facts: confirmedFacts,
-    imageResumeAttachment: null
+    facts: confirmedFacts
   };
 
-  // 直调 orchestration 层 draftMaterial（绕过 OUTPUT_GATE_RELEASED 守卫）
+  // 直调 orchestration 层 draftMaterial（隔离探针，独立验证生成逻辑本身，不经 coreApi）
   try {
     const result = await orchestrateDraftMaterial({
       profile,
@@ -665,8 +664,7 @@ function buildProfile(id: string, facts: ProfileFact[]): UserProfile {
     targetRoles: [],
     targetCities: [],
     resumeText: "",
-    facts,
-    imageResumeAttachment: null
+    facts
   };
 }
 

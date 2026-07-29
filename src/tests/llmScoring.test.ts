@@ -20,8 +20,7 @@ function buildProfile(facts: ProfileFact[]): UserProfile {
     targetRoles: [],
     targetCities: [],
     resumeText: "",
-    facts,
-    imageResumeAttachment: null
+    facts
   };
 }
 

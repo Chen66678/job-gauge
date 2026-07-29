@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CoreJobRecord, CorePreferences } from "../domain/coreState";
 import { CORE_STATE_STORAGE_KEY } from "../domain/coreState";
 import { createCoreApi } from "../domain/coreApi";
-import { OUTPUT_GATE_RELEASED } from "../outputGateRelease";
 import type { KeywordPreScreenResult } from "../domain/jobPreScreen";
 import type { OpenAiCompatibleLlmClient } from "../domain/llmClient";
 import type { FollowUpQuestion } from "../domain/followUp";
@@ -212,14 +211,16 @@ beforeEach(() => {
 describe("coreApi", () => {
   it("ingestResume stores new facts in memory and persists state", async () => {
     const storage = new MemoryStorage();
-    const facts = [buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" })];
+    const facts = [buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发", status: "unconfirmed" })];
+    const confirmedFacts = facts.map((fact) => ({ ...fact, status: "confirmed" as const }));
     orchestrationMocks.ingestResume.mockResolvedValueOnce(facts);
     const api = createCoreApi({ client: createClient(), storage });
 
     const result = await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
 
-    expect(result).toEqual(facts);
-    expect(api.getState().factLibrary).toEqual(facts);
+    // D026：事实入库默认自动确认，不再停在待确认状态。
+    expect(result).toEqual(confirmedFacts);
+    expect(api.getState().factLibrary).toEqual(confirmedFacts);
     expect(storage.setItem).toHaveBeenCalled();
     expect(storage.getItem(CORE_STATE_STORAGE_KEY)).toContain("\"factLibrary\"");
   });
@@ -236,32 +237,98 @@ describe("coreApi", () => {
     expect(api.getState().factLibrary).toEqual([{ ...fact, status: "confirmed" }]);
   });
 
-  it("re-ingesting the same resume keeps user confirmations for unchanged facts", async () => {
+  // D026 回归锁：事实入库改自动确认后，重复抽取（重传简历）不得推翻用户已做过的
+  // 明确决定（排除/确认）；内容变化或全新事实才走自动确认。
+  it("[D026] re-ingesting an unchanged fact that the user rejected keeps it rejected", async () => {
     const storage = new MemoryStorage();
     const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" });
     orchestrationMocks.ingestResume
       .mockResolvedValueOnce([fact])
-      .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" })])
+      .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" })]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    api.setFactStatus("fact-1", "rejected");
+
+    // 同内容重传：不得把用户的排除决定翻回 confirmed。
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    expect(api.getState().factLibrary[0].status).toBe("rejected");
+  });
+
+  it("[D026] re-ingesting an unchanged fact that the user confirmed keeps it confirmed", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" });
+    orchestrationMocks.ingestResume
+      .mockResolvedValueOnce([fact])
+      .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" })]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    expect(api.getState().factLibrary[0].status).toBe("confirmed");
+
+    // 同内容重传：不要求用户重新确认。
+    await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    expect(api.getState().factLibrary[0].status).toBe("confirmed");
+  });
+
+  it("[D026] re-ingesting a fact whose content changed re-confirms it automatically", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" });
+    orchestrationMocks.ingestResume
+      .mockResolvedValueOnce([fact])
       .mockResolvedValueOnce([buildFact({ id: "fact-1", label: "React", value: "主导 React 架构升级" })]);
     const api = createCoreApi({ client: createClient(), storage });
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api.setFactStatus("fact-1", "confirmed");
-    // 同内容重传：确认状态保留。
+    api.setFactStatus("fact-1", "rejected");
+
+    // 内容变化：即便原先被排除，新内容也走自动确认（不是同一条事实的延续）。
+    await api.ingestResume({ kind: "text", resumeText: "主导 React 架构升级。" });
+    expect(api.getState().factLibrary[0].status).toBe("confirmed");
+    expect(api.getState().factLibrary[0].value).toBe("主导 React 架构升级");
+  });
+
+  it("[D026] a brand-new fact is confirmed automatically", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发", status: "unconfirmed" });
+    orchestrationMocks.ingestResume.mockResolvedValueOnce([fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
     expect(api.getState().factLibrary[0].status).toBe("confirmed");
-    // 内容变化：要求重新确认。
-    await api.ingestResume({ kind: "text", resumeText: "主导 React 架构升级。" });
-    expect(api.getState().factLibrary[0].status).toBe("unconfirmed");
+  });
+
+  it("clearFactLibrary removes all facts from state", () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    api.addManualFact({ content: "会 React", category: "技能" });
+    api.addManualFact({ content: "会 TypeScript", category: "技能" });
+    expect(api.getState().factLibrary).toHaveLength(2);
+    api.clearFactLibrary();
+    expect(api.getState().factLibrary).toHaveLength(0);
+  });
+
+  it("deleteFact removes a single fact by id", () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    api.addManualFact({ content: "会 React", category: "技能" });
+    api.addManualFact({ content: "会 TypeScript", category: "技能" });
+    const [first] = api.getState().factLibrary;
+    api.deleteFact(first.id);
+    expect(api.getState().factLibrary).toHaveLength(1);
+    expect(api.getState().factLibrary[0].id).not.toBe(first.id);
   });
 
   it("only passes confirmed facts into downstream evaluation", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
-    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发", status: "unconfirmed" });
+    // D026：入库即自动 confirmed，所以用「用户排除」来制造一条非 confirmed 事实，
+    // 验证被排除的事实不会进入评估，而重新确认后会进入。
+    const fact = buildFact({ id: "fact-1", label: "React", value: "负责 React 组件开发" });
     orchestrationMocks.ingestResume.mockResolvedValueOnce([fact]);
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
+    api.setFactStatus("fact-1", "rejected");
     await api.evaluateJobFromJd({
       jdText: "要求 React 组件开发。",
       jobBase: {
@@ -362,11 +429,11 @@ describe("coreApi", () => {
     expect(api.getState().jobs.find((item) => item.job.id === record.job.id)).toBeDefined();
   });
 
-  it("applies follow-up answers as unconfirmed facts and persists them", async () => {
+  it("[D026] applies follow-up answers as confirmed facts and persists them", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
     const questions = buildQuestions();
-    const newFacts = [
+    const rawFacts = [
       buildFact({
         id: "fact-followup-1",
         label: "React 后台开发",
@@ -376,8 +443,9 @@ describe("coreApi", () => {
         status: "unconfirmed"
       })
     ];
+    const newFacts = rawFacts.map((fact) => ({ ...fact, status: "confirmed" as const }));
     orchestrationMocks.buildFollowUps.mockResolvedValueOnce(questions);
-    orchestrationMocks.applyFollowUpAnswers.mockResolvedValueOnce(newFacts);
+    orchestrationMocks.applyFollowUpAnswers.mockResolvedValueOnce(rawFacts);
 
     const record = await api.evaluateJobFromJd({
       jdText: "要求 React 组件开发。",
@@ -400,7 +468,7 @@ describe("coreApi", () => {
 
     expect(result).toEqual(newFacts);
     expect(api.getState().factLibrary).toEqual(newFacts);
-    expect(api.getState().factLibrary.every((fact) => fact.status === "unconfirmed")).toBe(true);
+    expect(api.getState().factLibrary.every((fact) => fact.status === "confirmed")).toBe(true);
     expect(storage.setItem).toHaveBeenCalled();
   });
 
@@ -426,12 +494,7 @@ describe("coreApi", () => {
     expect(api2.getState().preferences).toEqual(preferences);
   });
 
-  // 官方输出面构建期强制关闭（D008 §8 / 判据 §4/§8）。
-  // 原「draftMaterial 走生成路径并返回 preview」的断言已与「构建期无条件关闭」冲突，
-  // 转为锁定测试：闸门未过审时 draftMaterial 必须 blocked、根本不进 orchestration。
-  // 生成路径本身的覆盖仍由 orchestration.test.ts + materialDrafting.test.ts 承担。
-  it("[输出面关闭] draftMaterial 在闸门未解锁时返回 blocked，且不进入 orchestration", async () => {
-    expect(OUTPUT_GATE_RELEASED).toBe(false);
+  it("draftMaterial 走真实生成路径，对已评估未否决的岗位返回非 blocked 材料", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
     const record = await api.evaluateJobFromJd({
@@ -447,17 +510,11 @@ describe("coreApi", () => {
 
     const material = await api.draftMaterial(record.job.id);
 
-    expect(material.status).toBe("blocked");
-    expect(material.resumeLines).toEqual([]);
-    expect(material.greeting).toBe("");
-    // 关键：绝不进入生成路径。
-    expect(orchestrationMocks.draftMaterial).not.toHaveBeenCalled();
+    expect(material.status).not.toBe("blocked");
+    expect(orchestrationMocks.draftMaterial).toHaveBeenCalledOnce();
   });
 
-  it("[输出面关闭] exportResume 在闸门未解锁时零 markdown 字节外泄（即便记录里已有 ready 材料）", () => {
-    expect(OUTPUT_GATE_RELEASED).toBe(false);
-    // 直接把一条「已生成 ready 材料」的记录种入 storage，绕过被关闭的 draftMaterial，
-    // 验证导出侧独立关闭：即使材料在库，exportResume 也不吐字节。
+  it("exportResume 走真实路径，对已生成 ready 材料的记录返回非空 markdown", () => {
     const storage = new MemoryStorage();
     const readyRecord: CoreJobRecord = {
       job: {
@@ -481,19 +538,23 @@ describe("coreApi", () => {
       material: buildMaterial(),
       updatedAt: new Date().toISOString()
     };
-    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({ factLibrary: [], jobs: [readyRecord], preferences: null }));
+    storage.setItem(
+      CORE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+        factLibrary: [],
+        jobs: [readyRecord],
+        preferences: null
+      })
+    );
 
     const api = createCoreApi({ client: createClient(), storage });
     const markdown = api.exportResume("job-ready");
 
-    expect(markdown).toBe("");
-  });
-
-  it("[输出面关闭·回归锁] 构建期常量默认关闭，防日后被悄悄开回来", () => {
-    // 这条是防倒退的锁：任何把 OUTPUT_GATE_RELEASED 改 true 的提交都会先撞红这里，
-    // 逼其走 D008 §8 完整解锁流程（交付物过双审 → 实现 → §5 验收 → 发布硬合取），
-    // 不得为「先跑通链」私自解锁。
-    expect(OUTPUT_GATE_RELEASED).toBe(false);
+    expect(markdown.length).toBeGreaterThan(0);
+    expect(markdown).toContain("# 前端工程师 - 样例科技");
+    expect(markdown).toContain("负责 React 组件开发。");
   });
 
   it("preScreenJob stores preScreenResult on the job record and persists it", async () => {

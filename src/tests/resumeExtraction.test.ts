@@ -5,7 +5,9 @@ import type { OpenAiCompatibleLlmClient } from "../domain/llmClient";
 function createMockClient(overrides: Partial<Pick<OpenAiCompatibleLlmClient, "completeText" | "completeVision">> = {}): OpenAiCompatibleLlmClient {
   return {
     completeText: vi.fn(async () => "{\"facts\":[]}"),
-    completeVision: vi.fn(async () => "{\"facts\":[]}"),
+    completeVision: vi.fn(async () => {
+      throw new Error("completeVision should not be used for resume extraction");
+    }),
     ...overrides
   } as OpenAiCompatibleLlmClient;
 }
@@ -75,51 +77,52 @@ describe("extractFactsFromResume", () => {
     expect(facts.every((fact) => fact.sourceType === "resume")).toBe(true);
   });
 
-  it("uses completeVision for image input and passes json mode", async () => {
-    const client = createMockClient({
-      completeVision: vi.fn(async () =>
-        JSON.stringify({
-          facts: [
-            {
-              category: "教育",
-              label: "本科",
-              value: "软件工程本科",
-              confidence: 0.88
-            }
-          ]
-        })
-      )
-    });
+  it("[D025 回归锁] 从不调用 completeVision：图片简历入口已砍，只走文本路径", async () => {
+    const client = createMockClient();
 
-    const facts = await extractFactsFromResume({
-      kind: "image",
-      imageBase64: "abc123",
-      mimeType: "image/png",
-      sourceRef: "测试图片简历",
+    await extractFactsFromResume({
+      kind: "text",
+      resumeText: "使用 TypeScript 开发数据看板。",
+      sourceRef: "测试文本简历",
       client
     });
 
-    expect(client.completeVision).toHaveBeenCalledTimes(1);
-    expect(client.completeText).not.toHaveBeenCalled();
-    expect(client.completeVision).toHaveBeenCalledWith({
-      system: expect.stringContaining("json"),
-      user: expect.any(String),
-      imageBase64: "abc123",
-      mimeType: "image/png",
-      responseFormatJson: true
+    expect(client.completeVision).not.toHaveBeenCalled();
+  });
+
+  it("[D025 回归锁] 粒度规则要求按语境合并同一项目/工作的多条 bullet 为一张完整卡片，且禁止压缩改写；不得残留旧的逐条硬拆规则", async () => {
+    const client = createMockClient();
+
+    await extractFactsFromResume({
+      kind: "text",
+      resumeText: "占位简历文本",
+      sourceRef: "测试简历",
+      client
     });
-    expect(facts).toEqual([
-      {
-        id: "fact-resume-1-教育-本科",
-        category: "教育",
-        label: "本科",
-        value: "软件工程本科",
-        sourceType: "resume",
-        sourceRef: "测试图片简历",
-        status: "unconfirmed",
-        confidence: 0.88
-      }
-    ]);
+
+    const call = (client.completeText as unknown as { mock: { calls: Array<[{ system?: string }]> } }).mock.calls[0][0];
+    expect(call.system).toContain("merge them into ONE fact item");
+    expect(call.system).toContain("Do not paraphrase, compress, summarize, or rewrite");
+    expect(call.system).not.toContain("extract EACH bullet as its own separate fact item");
+    expect(call.system).not.toContain("Never merge two or more bullets");
+  });
+
+  it("[D025 第一批补刀 回归锁] 粒度规则要求 personal/job_search 各合并为一张卡、education 按学校合并，且不得为了压数字把不同工作/项目/学校糊在一起", async () => {
+    const client = createMockClient();
+
+    await extractFactsFromResume({
+      kind: "text",
+      resumeText: "占位简历文本",
+      sourceRef: "测试简历",
+      client
+    });
+
+    const call = (client.completeText as unknown as { mock: { calls: Array<[{ system?: string }]> } }).mock.calls[0][0];
+    expect(call.system).toContain('Merge ALL personal contact fields');
+    expect(call.system).toContain('Merge ALL job-search intent fields');
+    expect(call.system).toContain("Merge one school's institution + major + degree + duration into ONE");
+    expect(call.system).toContain("NEVER apply it across two different jobs or two different projects");
+    expect(call.system).toContain("This rule never applies to jobs, projects, skills, or any experience narrative");
   });
 
   it("returns an empty array for invalid or empty model output", async () => {

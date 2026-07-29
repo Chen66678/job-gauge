@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld("coreApi", {
   diagnoseBatch: () => invokeCoreApi("diagnoseBatch"),
   clear: () => invokeCoreApi("clear"),
   addManualFact: (input) => invokeCoreApi("addManualFact", input),
+  clearFactLibrary: () => invokeCoreApi("clearFactLibrary"),
+  deleteFact: (factId) => invokeCoreApi("deleteFact", factId),
   saveAndVerifyByokKey: (request) => invokeCoreApi("saveAndVerifyByokKey", request),
   getByokKeyStatus: () => invokeCoreApi("getByokKeyStatus"),
   clearByokKey: () => invokeCoreApi("clearByokKey"),

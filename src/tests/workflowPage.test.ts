@@ -12,9 +12,9 @@ const { extractPdfResume, isPdfFile } = vi.hoisted(() => ({
 vi.mock('../domain/pdfResume', () => ({ extractPdfResume, isPdfFile }))
 
 import {
-  continueAfterFactConfirmationForWorkflow,
   default as WorkflowPage,
   prepareScoringAfterConfirmation,
+  reevaluateForWorkflow,
   submitJobFollowUpsForWorkflow,
   type FollowUpQuestion,
   type WorkflowApi,
@@ -74,7 +74,7 @@ function createStatefulApi(initialState: WorkflowState) {
   const api = {
     getState: vi.fn(async () => structuredClone(state)),
     applyFollowUpAnswers: vi.fn(async () => {
-      const fact = buildFact('follow-up-fact')
+      const fact = buildFact('follow-up-fact', 'confirmed')
       state.factLibrary.push(fact)
       return [fact]
     }),
@@ -112,7 +112,7 @@ describe('WorkflowPage state machine', () => {
     const api = createResumeUploadApi()
     window.coreApi = api as unknown as typeof window.coreApi
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理\n负责招聘平台项目。' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理\n负责招聘平台项目。')
 
     render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
     await selectResumeFile(new File(['%PDF'], 'resume.pdf', { type: 'application/pdf' }))
@@ -127,41 +127,21 @@ describe('WorkflowPage state machine', () => {
     }))
   })
 
-  it('sends a textless PDF rasterization through the existing image OCR path', async () => {
+  it('[D025] 无文字层 PDF 明确报错给用户，不静默失败、不再走图片识别路径', async () => {
     const api = createResumeUploadApi()
     window.coreApi = api as unknown as typeof window.coreApi
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'image', imageBase64: 'rendered-pdf-page', mimeType: 'image/png' })
+    extractPdfResume.mockRejectedValue(new Error('这份 PDF 没有文字层（可能是扫描件或图片型 PDF），请上传带文字的版本，或直接在"我的资料"里手动录入。'))
 
     render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
     await selectResumeFile(new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' }))
     await waitFor(() => expect(extractPdfResume).toHaveBeenCalledOnce())
-    fireEvent.click(screen.getByRole('button', { name: '下一步' }))
 
-    await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({
-      kind: 'image',
-      imageBase64: 'rendered-pdf-page',
-      mimeType: 'image/png',
-    }))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('没有文字层'))
+    expect(api.ingestResume).not.toHaveBeenCalled()
   })
 
-  it('re-evaluates an already scored job after initial fact confirmation', async () => {
-    const { api, reevaluateJob } = createStatefulApi({ factLibrary: [buildFact('resume-fact', 'confirmed')], jobs: [buildJob()] })
-
-    const nextStep = await continueAfterFactConfirmationForWorkflow({
-      api,
-      jobId: 'job-new',
-      nextStep: 'SCORING',
-      hasExistingEvaluation: true,
-      hasNewConfirmedFacts: false,
-    })
-
-    expect(nextStep).toBe('SCORING')
-    expect(reevaluateJob).toHaveBeenCalledOnce()
-    expect(reevaluateJob).toHaveBeenCalledWith('job-new')
-  })
-
-  it('routes job follow-up facts through confirmation before re-evaluation', async () => {
+  it('[D026] job follow-up facts are auto-confirmed and route directly to GENERATE without CONFIRM_FACTS', async () => {
     const { api, reevaluateJob, getState } = createStatefulApi({ factLibrary: [], jobs: [buildJob()] })
 
     const submission = await submitJobFollowUpsForWorkflow({
@@ -171,22 +151,13 @@ describe('WorkflowPage state machine', () => {
       answers: { 'question-1': '我负责过 React 项目' },
     })
 
-    expect(submission.nextStep).toBe('CONFIRM_FACTS')
-    expect(getState().factLibrary[0]?.status).toBe('unconfirmed')
+    expect(submission.hadNewFacts).toBe(true)
+    expect(getState().factLibrary[0]?.status).toBe('confirmed')
     expect(reevaluateJob).not.toHaveBeenCalled()
 
-    await api.setFactStatusBatch([{ factId: submission.newFacts[0].id, status: 'confirmed' }])
-    const nextStep = await continueAfterFactConfirmationForWorkflow({
-      api,
-      jobId: 'job-new',
-      nextStep: 'GENERATE',
-      hasExistingEvaluation: true,
-      hasNewConfirmedFacts: true,
-    })
-
-    expect(nextStep).toBe('GENERATE')
+    await reevaluateForWorkflow(api, 'job-new')
     expect(reevaluateJob).toHaveBeenCalledOnce()
-    expect(getState().factLibrary[0]?.status).toBe('confirmed')
+    expect(reevaluateJob).toHaveBeenCalledWith('job-new')
   })
 
   it('exposes a failed re-evaluation warning and retries the same job without replacing its score', async () => {
@@ -210,8 +181,6 @@ describe('WorkflowPage state machine', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     await screen.findByRole('heading', { name: '简历追问' })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
-    await screen.findByRole('heading', { name: '确认事实' })
-    fireEvent.click(screen.getByRole('button', { name: '下一步：岗位评分' }))
 
     await screen.findByRole('heading', { name: '岗位评分' })
     expect(screen.getByRole('alert').textContent).toContain('重评失败，当前展示的是上一次的分数：模型服务无响应')
@@ -222,7 +191,7 @@ describe('WorkflowPage state machine', () => {
     expect(reevaluateJob).toHaveBeenLastCalledWith('job-new')
   })
 
-  function buildUnscoredJobApi() {
+  it('[D026] job follow-up submission with new facts triggers reevaluation before reaching GENERATE', async () => {
     const state: WorkflowState = { factLibrary: [], jobs: [buildJob({ evaluation: null })] }
     const reevaluateJob = vi.fn(async (jobId: string) => state.jobs.find(record => record.job.id === jobId) ?? null)
     const evaluateJobFromJd = vi.fn(async () => {
@@ -231,22 +200,9 @@ describe('WorkflowPage state machine', () => {
       return scored
     })
     const applyFollowUpAnswers = vi.fn(async () => {
-      const fact = buildFact('job-follow-up-fact')
+      const fact = buildFact('job-follow-up-fact', 'confirmed')
       state.factLibrary.push(fact)
       return [fact]
-    })
-    const addManualFact = vi.fn(async (input: { content: string; category: string }) => {
-      const fact: ProfileFact = {
-        id: 'manual-fact-1',
-        category: input.category,
-        label: input.category,
-        value: input.content,
-        sourceType: 'manual',
-        sourceRef: 'manual',
-        status: 'confirmed',
-        confidence: 1,
-      }
-      state.factLibrary.push(fact)
     })
     const api = {
       getState: vi.fn(async () => structuredClone(state)),
@@ -255,23 +211,15 @@ describe('WorkflowPage state machine', () => {
       evaluateJobFromJd,
       buildFollowUps: vi.fn(async () => questions),
       applyFollowUpAnswers,
-      setFactStatus: vi.fn(async (factId: string, status: FactStatus) => {
-        state.factLibrary = state.factLibrary.map(fact => fact.id === factId ? { ...fact, status } : fact)
-      }),
-      addManualFact,
       reevaluateJob,
     } as unknown as WorkflowApi
     window.coreApi = api as unknown as typeof window.coreApi
-    return { api, reevaluateJob }
-  }
 
-  async function driveToJobFollowUpAnswer() {
+    render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
     fireEvent.change(screen.getByPlaceholderText('粘贴简历文本'), { target: { value: '简历内容' } })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     await screen.findByRole('heading', { name: '简历追问' })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
-    await screen.findByRole('heading', { name: '确认事实' })
-    fireEvent.click(screen.getByRole('button', { name: '下一步：岗位评分' }))
     await screen.findByRole('heading', { name: '岗位评分' })
     fireEvent.change(screen.getByPlaceholderText('粘贴岗位描述'), { target: { value: '岗位 JD' } })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
@@ -282,41 +230,10 @@ describe('WorkflowPage state machine', () => {
     fireEvent.click(screen.getByRole('button', { name: '提交全部' }))
     await screen.findByRole('heading', { name: '提交成功' })
     fireEvent.click(screen.getByRole('button', { name: '关闭' }))
-    await screen.findByRole('heading', { name: '确认事实' })
-  }
-
-  it('reaches generation after follow-up facts are explicitly rejected', async () => {
-    const { reevaluateJob } = buildUnscoredJobApi()
-
-    render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
-    await driveToJobFollowUpAnswer()
-
-    fireEvent.click(screen.getByRole('button', { name: '否掉' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '否掉' })).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: '下一步：重评并生成' }))
-
-    await screen.findByRole('heading', { name: '生成材料' })
-    expect(reevaluateJob).not.toHaveBeenCalled()
-  })
-
-  it('re-evaluates when a manually added confirmed fact replaces a rejected follow-up fact', async () => {
-    const { reevaluateJob } = buildUnscoredJobApi()
-
-    render(createElement(WorkflowPage, { selectedJobId: 'job-new' }))
-    await driveToJobFollowUpAnswer()
-
-    fireEvent.click(screen.getByRole('button', { name: '否掉' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: '否掉' })).toBeNull())
-
-    const { addManualFact } = window.coreApi as unknown as { addManualFact: ReturnType<typeof vi.fn> }
-    fireEvent.change(screen.getByPlaceholderText('事实内容'), { target: { value: '手动补充的事实' } })
-    fireEvent.click(screen.getByRole('button', { name: '添加' }))
-    await waitFor(() => expect(addManualFact).toHaveBeenCalledOnce())
-
-    fireEvent.click(screen.getByRole('button', { name: '下一步：重评并生成' }))
 
     await waitFor(() => expect(reevaluateJob).toHaveBeenCalledOnce())
     expect(reevaluateJob).toHaveBeenCalledWith('job-new')
+    await screen.findByRole('heading', { name: '生成材料' })
   })
 
   it('keeps the newly selected job active when an older scoring request resolves', async () => {
@@ -351,8 +268,6 @@ describe('WorkflowPage state machine', () => {
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
     await screen.findByRole('heading', { name: '简历追问' })
     fireEvent.click(screen.getByRole('button', { name: '下一步' }))
-    await screen.findByRole('heading', { name: '确认事实' })
-    fireEvent.click(screen.getByRole('button', { name: '下一步：岗位评分' }))
     await screen.findByRole('heading', { name: '岗位评分' })
 
     fireEvent.change(screen.getByPlaceholderText('粘贴岗位描述'), { target: { value: '岗位 A 的 JD' } })

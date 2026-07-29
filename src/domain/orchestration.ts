@@ -23,23 +23,14 @@ import { draftApplicationMaterial } from "./materialDrafting";
 import { sanitizeGreeting } from "./greetingGuard";
 
 export async function ingestResume(input: {
-  resume: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string };
+  resume: { kind: "text"; resumeText: string };
   client: OpenAiCompatibleLlmClient;
 }): Promise<ProfileFact[]> {
-  return extractFactsFromResume(
-    input.resume.kind === "text"
-      ? {
-          kind: "text",
-          resumeText: input.resume.resumeText,
-          client: input.client
-        }
-      : {
-          kind: "image",
-          imageBase64: input.resume.imageBase64,
-          mimeType: input.resume.mimeType,
-          client: input.client
-        }
-  );
+  return extractFactsFromResume({
+    kind: "text",
+    resumeText: input.resume.resumeText,
+    client: input.client
+  });
 }
 
 export async function ingestJd(input: {
@@ -157,7 +148,7 @@ export async function draftMaterial(input: {
 }
 
 export async function runFullChainForDemo(input: {
-  resume: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string };
+  resume: { kind: "text"; resumeText: string };
   jdText: string;
   jobBase: {
     title: string;
@@ -254,7 +245,7 @@ export async function runFullChainForDemo(input: {
 
 function buildDemoProfile(
   facts: ProfileFact[],
-  resume: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string },
+  resume: { kind: "text"; resumeText: string },
   confirmAllFacts: boolean
 ): UserProfile {
   return {
@@ -263,9 +254,8 @@ function buildDemoProfile(
     headline: "待确认画像",
     targetRoles: [],
     targetCities: [],
-    resumeText: resume.kind === "text" ? resume.resumeText : "",
-    facts: confirmAllFacts ? facts.map((fact) => ({ ...fact, status: "confirmed" as const })) : facts,
-    imageResumeAttachment: null
+    resumeText: resume.resumeText,
+    facts: confirmAllFacts ? facts.map((fact) => ({ ...fact, status: "confirmed" as const })) : facts
   };
 }
 

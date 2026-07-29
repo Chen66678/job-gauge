@@ -52,7 +52,7 @@ describe('OnboardingPage resume step', () => {
   it('does not echo extracted PDF text after selecting a file', async () => {
     buildApi()
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理\n负责招聘平台项目。' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理\n负责招聘平台项目。')
 
     render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
     await advanceToStep2()
@@ -66,7 +66,7 @@ describe('OnboardingPage resume step', () => {
   it('still sends the extracted text to ingestResume on submit', async () => {
     const api = buildApi()
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理')
 
     render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
     await advanceToStep2()
@@ -114,7 +114,7 @@ describe('OnboardingPage resume step', () => {
       ingestResume: vi.fn(async () => ({ error: '未配置模型 API key，暂时无法执行需要模型的操作。' })),
     })
     isPdfFile.mockReturnValue(true)
-    extractPdfResume.mockResolvedValue({ kind: 'text', resumeText: '张三\n产品经理' })
+    extractPdfResume.mockResolvedValue('张三\n产品经理')
 
     render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
     await advanceToStep2()

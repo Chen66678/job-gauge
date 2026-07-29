@@ -26,7 +26,7 @@ export type AuditEventType =
   | "browser_readonly_imported"
   | "browser_readonly_stopped";
 export type LlmProvider = "mock" | "qwen_dashscope" | "deepseek_text_fallback" | "other";
-export type LlmKeyState = "not_configured" | "configured_elsewhere" | "configured_for_session" | "placeholder_only";
+export type LlmKeyState = "not_configured" | "configured_elsewhere" | "configured_for_session";
 export type LlmCallType = "jd_profile_text_analysis" | "truthful_material_text_draft";
 export type LlmStopReason =
   | "llm_key_missing"
@@ -140,7 +140,6 @@ export interface ProbeAuthorization {
   confirmedAt: string;
   scope: "single_readonly_session";
   sourceLabel: "visible_probe" | "boss_visible_readonly";
-  isMock: true;
 }
 
 export interface ProfileFact {
@@ -154,20 +153,6 @@ export interface ProfileFact {
   confidence: number;
 }
 
-export type ImageResumeAttachmentStatus = "provided";
-export type ImageResumeAttachmentKind = "image/jpeg" | "image/png" | "image/webp" | "unknown";
-export type ImageResumeAttachmentSizeBucket = "under_1mb" | "1mb_to_5mb" | "over_5mb" | "unknown";
-
-export interface ImageResumeAttachment {
-  status: ImageResumeAttachmentStatus;
-  displayName: string;
-  mimeType: ImageResumeAttachmentKind;
-  sizeBucket: ImageResumeAttachmentSizeBucket;
-  sizeLabel: string;
-  updatedAt: string;
-  note: string | null;
-}
-
 export interface UserProfile {
   id: string;
   displayName: string;
@@ -176,7 +161,6 @@ export interface UserProfile {
   targetCities: string[];
   resumeText: string;
   facts: ProfileFact[];
-  imageResumeAttachment: ImageResumeAttachment | null;
 }
 
 export interface PreferenceRuleSet {
@@ -772,5 +756,4 @@ export interface LlmSettings {
 export interface AppSettings {
   llm: LlmSettings;
   localStorageKey: string;
-  exportMode: "placeholder_only";
 }

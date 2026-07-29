@@ -233,6 +233,8 @@ function registerCoreApiHandlers(core) {
   invoke("diagnoseBatch", () => core.api.diagnoseBatch(core.getClient()));
   invoke("clear", () => core.api.clear());
   invoke("addManualFact", (input) => core.api.addManualFact(input));
+  invoke("clearFactLibrary", () => core.api.clearFactLibrary());
+  invoke("deleteFact", (factId) => core.api.deleteFact(factId));
 
   registerByokHandlers(core);
 }

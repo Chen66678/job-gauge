@@ -5,7 +5,7 @@ import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import './ProfilePage.css'
 
-type ResumeInput = { kind: 'text'; resumeText: string } | { kind: 'image'; imageBase64: string; mimeType: string }
+type ResumeInput = { kind: 'text'; resumeText: string }
 type UndoState = { factId: string; previousStatus: FactStatus } | null
 
 function sourceLabel(sourceType: ProfileFact['sourceType']) {
@@ -87,9 +87,7 @@ export default function ProfilePage() {
     setParseError(null)
     try {
       if (isPdfFile(file)) {
-        const extracted = await extractPdfResume(file)
-        if (extracted.kind === 'text') setResumeInput({ kind: 'text', resumeText: extracted.resumeText })
-        else setResumeInput({ kind: 'image', imageBase64: extracted.imageBase64, mimeType: extracted.mimeType })
+        setResumeInput({ kind: 'text', resumeText: await extractPdfResume(file) })
       } else {
         setResumeInput({ kind: 'text', resumeText: await file.text() })
       }
@@ -172,7 +170,7 @@ export default function ProfilePage() {
     <div className="page-header"><h1>我的资料</h1><div className="meta">共 {facts.length} 条事实 · 已确认 {confirmedCount} 条</div></div>
     <div className="section-head profile-section-first"><span className="dot d-indigo" /><span className="section-title">简历</span></div>
     {parsing ? <div className="parsing"><span className="p-spin">◌</span><div><div className="p-txt">正在解析简历…</div><div className="p-warn">解析期间请勿关闭窗口，关闭后需重新上传。</div></div></div> : parseError ? <div className="parse-fail"><div className="pf-title">简历解析失败</div><div className="pf-sub">{parseError}</div><div className="pf-actions"><button className="btn-retry" onClick={() => { setParseError(null); fileInputRef.current?.click() }}><UploadIcon />重新上传</button></div></div> : facts.length ? <div className="resume-card"><div className="resume-row"><div className="resume-icon"><ResumeIcon /></div><div className="resume-body"><div className="resume-title"><span className="ok-dot"><CheckIcon /></span>简历已解析，提取出 <b>{facts.length}</b> 条事实</div><div className="resume-sub">如需更新简历，可重新上传 PDF 或粘贴文字——原有已确认事实不会自动覆盖</div></div><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />重新上传</button></div></div> : <div className="empty-state"><div className="empty-icon"><ResumeIcon /></div><div className="empty-title">上传简历，建立你的事实库</div><div className="empty-sub">解析后可逐条确认工作经历、技能与偏好，为岗位评估提供依据。</div></div>}
-    <div className="drop-zone"><div className="dz-icon"><UploadIcon /></div><div className="dz-title">上传 PDF、文本简历或粘贴简历内容</div><div className="dz-sub">支持 PDF、TXT、Markdown 与图片格式</div><div className="dz-actions"><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />选择文件</button><button className="btn btn-primary" onClick={parseTypedResume} disabled={parsing}>解析简历</button></div>{selectedFileName && <p className="resume-title"><span className="ok-dot"><CheckIcon /></span>已选择文件：{selectedFileName}</p>}<textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} placeholder="粘贴简历文本" aria-label="粘贴简历文本" rows={4} /><input ref={fileInputRef} className="profile-file-input" type="file" accept=".txt,.md,.pdf,image/*" onChange={event => void fileSelected(event.target.files?.[0])} /></div>
+    <div className="drop-zone"><div className="dz-icon"><UploadIcon /></div><div className="dz-title">上传 PDF、文本简历或粘贴简历内容</div><div className="dz-sub">支持 PDF、TXT、Markdown 格式</div><div className="dz-actions"><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />选择文件</button><button className="btn btn-primary" onClick={parseTypedResume} disabled={parsing}>解析简历</button></div>{selectedFileName && <p className="resume-title"><span className="ok-dot"><CheckIcon /></span>已选择文件：{selectedFileName}</p>}<textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} placeholder="粘贴简历文本" aria-label="粘贴简历文本" rows={4} /><input ref={fileInputRef} className="profile-file-input" type="file" accept=".txt,.md,.pdf" onChange={event => void fileSelected(event.target.files?.[0])} /></div>
     {error && <p role="alert" className="profile-error">{error}</p>}
     <div className="section-head"><span className="dot d-indigo" /><span className="section-title">事实库</span></div>
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}

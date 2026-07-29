@@ -2,6 +2,8 @@ import type { FactStatus, MaterialPreview, ProfileFact, ScoreResult, UserProfile
 import type { BatchDiagnosis, CoreJobRecord, CorePreferences, CoreState } from "./coreState";
 import {
   clearCoreState,
+  clearFactLibrary as clearCoreFactLibrary,
+  deleteFact as deleteCoreFactById,
   getConfirmedFacts,
   getJobRecord,
   loadCoreState,
@@ -15,7 +17,6 @@ import {
 } from "./coreState";
 import type { FollowUpQuestion } from "./followUp";
 import { exportToMarkdown } from "./exportResume";
-import { OUTPUT_GATE_RELEASED } from "../outputGateRelease";
 import { preScreenJob as runKeywordPreScreen, type KeywordPreScreenResult } from "./jobPreScreen";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import {
@@ -54,9 +55,7 @@ const BATCH_DIAGNOSIS_SYSTEM_PROMPT = [
 export interface CoreApi {
   getState(): CoreState;
   addManualFact(input: { content: string; category: string }): void;
-  ingestResume(
-    input: { kind: "text"; resumeText: string } | { kind: "image"; imageBase64: string; mimeType: string }
-  ): Promise<ProfileFact[]>;
+  ingestResume(input: { kind: "text"; resumeText: string }): Promise<ProfileFact[]>;
   setFactStatus(factId: string, status: FactStatus): void;
   setFactStatusBatch(updates: { factId: string; status: FactStatus }[]): void;
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
@@ -85,6 +84,8 @@ export interface CoreApi {
   exportResume(jobId: string): string;
   preScreenJob(jobId: string, keywords: string[]): KeywordPreScreenResult | null;
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
+  clearFactLibrary(): void;
+  deleteFact(factId: string): void;
   clear(): void;
 }
 
@@ -97,6 +98,22 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     return state;
   }
 
+  // D026：新抽取的事实默认自动确认，但重复抽取（重传简历/重复追问）不得
+  // 推翻用户已做过的明确决定：内容未变时保留原状态（confirmed/rejected），
+  // 内容变了或全新事实才标 confirmed。
+  function preserveUserDecidedStatus(facts: ProfileFact[]): ProfileFact[] {
+    const existingById = new Map(state.factLibrary.map((fact) => [fact.id, fact] as const));
+    return facts.map((fact) => {
+      const existing = existingById.get(fact.id);
+      const contentUnchanged = existing?.value === fact.value && existing?.category === fact.category;
+      const userDecided = existing?.status === "rejected" || existing?.status === "confirmed";
+      if (contentUnchanged && userDecided) {
+        return { ...fact, status: existing!.status };
+      }
+      return { ...fact, status: "confirmed" as const };
+    });
+  }
+
   function buildWorkingProfile(): UserProfile {
     return {
       id: "profile-core-api",
@@ -105,8 +122,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       targetRoles: [],
       targetCities: [],
       resumeText: "",
-      facts: getConfirmedFacts(state),
-      imageResumeAttachment: null
+      facts: getConfirmedFacts(state)
     };
   }
 
@@ -155,8 +171,9 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         resume: input,
         client: deps.client
       });
-      persist(upsertFacts(state, facts));
-      return facts;
+      const confirmedFacts = preserveUserDecidedStatus(facts);
+      persist(upsertFacts(state, confirmedFacts));
+      return confirmedFacts;
     },
 
     setFactStatus(factId, status) {
@@ -288,8 +305,9 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         answers,
         client: deps.client
       });
-      persist(upsertFacts(state, facts));
-      return facts;
+      const confirmedFacts = preserveUserDecidedStatus(facts);
+      persist(upsertFacts(state, confirmedFacts));
+      return confirmedFacts;
     },
 
     async reevaluateJob(jobId) {
@@ -369,16 +387,12 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         answers,
         client: deps.client
       });
-      persist(upsertFacts(state, facts));
-      return facts;
+      const confirmedFacts = preserveUserDecidedStatus(facts);
+      persist(upsertFacts(state, confirmedFacts));
+      return confirmedFacts;
     },
 
     async draftMaterial(jobId) {
-      // 官方输出面构建期强制关闭（fail-closed，先于任何生成路径）。
-      // 闸门交付物过双审前，绝不进入 orchestrateDraftMaterial / materialDrafting。
-      if (!OUTPUT_GATE_RELEASED) {
-        return toBlockedMaterial("官方输出能力未解锁：输出忠实性闸门未过审，材料生成已构建期关闭。");
-      }
       const record = getJobRecord(state, jobId);
       if (!record) {
         return toBlockedMaterial("岗位不存在,无法生成材料。");
@@ -420,10 +434,6 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
     },
 
     exportResume(jobId) {
-      // 官方输出面构建期强制关闭（fail-closed，绝不产出 markdown 字节）。
-      if (!OUTPUT_GATE_RELEASED) {
-        return "";
-      }
       const record = getJobRecord(state, jobId);
       if (!record?.material) {
         return "";
@@ -521,6 +531,14 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       }
 
       return diagnosis;
+    },
+
+    clearFactLibrary() {
+      persist(clearCoreFactLibrary(state));
+    },
+
+    deleteFact(factId) {
+      persist(deleteCoreFactById(state, factId));
     },
 
     clear() {

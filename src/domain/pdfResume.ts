@@ -2,16 +2,15 @@ import { getDocument, GlobalWorkerOptions, type PdfDocumentProxy } from 'pdfjs-d
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
 const MINIMUM_TEXT_LAYER_CHARACTERS = 40
-const RENDER_SCALE = 1.5
-const MAX_RENDER_WIDTH = 1600
-const MAX_RENDER_HEIGHT = 12000
-const PAGE_GAP = 24
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-export type PdfResumeExtraction =
-  | { kind: 'text'; resumeText: string }
-  | { kind: 'image'; imageBase64: string; mimeType: 'image/png' }
+export class PdfTextLayerMissingError extends Error {
+  constructor() {
+    super('这份 PDF 没有文字层（可能是扫描件或图片型 PDF），请上传带文字的版本，或直接在"我的资料"里手动录入。')
+    this.name = 'PdfTextLayerMissingError'
+  }
+}
 
 export function isPdfFile(file: Pick<File, 'name' | 'type'>): boolean {
   return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
@@ -32,21 +31,17 @@ export function hasUsablePdfText(text: string): boolean {
   return meaningfulCharacterCount >= MINIMUM_TEXT_LAYER_CHARACTERS
 }
 
-export async function extractPdfResume(file: File): Promise<PdfResumeExtraction> {
+export async function extractPdfResume(file: File): Promise<string> {
   const data = new Uint8Array(await file.arrayBuffer())
   const loadingTask = getDocument({ data })
 
   try {
     const document = await loadingTask.promise
     const resumeText = await extractText(document)
-    if (hasUsablePdfText(resumeText)) {
-      return { kind: 'text', resumeText }
+    if (!hasUsablePdfText(resumeText)) {
+      throw new PdfTextLayerMissingError()
     }
-    return {
-      kind: 'image',
-      imageBase64: await renderPdfToPngBase64(document),
-      mimeType: 'image/png',
-    }
+    return resumeText
   } finally {
     await loadingTask.destroy()
   }
@@ -69,43 +64,3 @@ async function extractText(pdfDocument: PdfDocumentProxy): Promise<string> {
   return pages.join('\n\n')
 }
 
-async function renderPdfToPngBase64(pdfDocument: PdfDocumentProxy): Promise<string> {
-  const renderedPages = [] as Array<{ canvas: HTMLCanvasElement; width: number; height: number }>
-  let widestPage = 0
-  let combinedHeight = 0
-
-  for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
-    const page = await pdfDocument.getPage(pageNumber)
-    const viewport = page.getViewport({ scale: RENDER_SCALE })
-    const canvas = globalThis.document.createElement('canvas')
-    canvas.width = Math.ceil(viewport.width)
-    canvas.height = Math.ceil(viewport.height)
-    const context = canvas.getContext('2d')
-    if (!context) throw new Error('当前环境无法将扫描版 PDF 转为图片。')
-    await page.render({ canvasContext: context, viewport }).promise
-    renderedPages.push({ canvas, width: canvas.width, height: canvas.height })
-    widestPage = Math.max(widestPage, canvas.width)
-    combinedHeight += canvas.height
-  }
-
-  combinedHeight += PAGE_GAP * Math.max(renderedPages.length - 1, 0)
-  const scale = Math.min(1, MAX_RENDER_WIDTH / widestPage, MAX_RENDER_HEIGHT / combinedHeight)
-  const output = globalThis.document.createElement('canvas')
-  output.width = Math.max(1, Math.floor(widestPage * scale))
-  output.height = Math.max(1, Math.floor(combinedHeight * scale))
-  const context = output.getContext('2d')
-  if (!context) throw new Error('当前环境无法将扫描版 PDF 转为图片。')
-  context.fillStyle = '#ffffff'
-  context.fillRect(0, 0, output.width, output.height)
-
-  let offsetY = 0
-  for (const page of renderedPages) {
-    const renderedWidth = page.width * scale
-    const renderedHeight = page.height * scale
-    context.drawImage(page.canvas, (output.width - renderedWidth) / 2, offsetY, renderedWidth, renderedHeight)
-    offsetY += renderedHeight + PAGE_GAP * scale
-  }
-
-  const [, base64 = ''] = output.toDataURL('image/png').split(',', 2)
-  return base64
-}

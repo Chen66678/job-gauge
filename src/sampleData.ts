@@ -95,8 +95,7 @@ export const sampleProfile: UserProfile = {
       status: "confirmed",
       confidence: 0.88
     }
-  ],
-  imageResumeAttachment: null
+  ]
 };
 
 export const samplePreferences: PreferenceRuleSet = {

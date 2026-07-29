@@ -2,20 +2,12 @@ import type { ProfileFact } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import { clampConfidence, isRecord, slugifyAsciiWithCjk, stripMarkdownFence } from "./shared";
 
-export type ResumeExtractionInput =
-  | {
-      kind: "text";
-      resumeText: string;
-      sourceRef?: string;
-      client: OpenAiCompatibleLlmClient;
-    }
-  | {
-      kind: "image";
-      imageBase64: string;
-      mimeType: string;
-      sourceRef?: string;
-      client: OpenAiCompatibleLlmClient;
-    };
+export interface ResumeExtractionInput {
+  kind: "text";
+  resumeText: string;
+  sourceRef?: string;
+  client: OpenAiCompatibleLlmClient;
+}
 
 interface ResumeFactEnvelope {
   facts: ResumeFactItem[];
@@ -30,12 +22,13 @@ interface ResumeFactItem {
 
 const RESUME_EXTRACTION_SYSTEM_PROMPT = [
   "You extract resume facts into json.",
-  "Only extract information that is explicitly stated in the resume or is a strong direct implication from the resume text or image.",
+  "Only extract information that is explicitly stated in the resume or is a strong direct implication from the resume text.",
   "Do not invent, guess, embellish, normalize into stronger claims, or fill missing details.",
   "If a fact is unclear, unsupported, contradictory, or absent, leave it out.",
   'Every returned fact is still unconfirmed by the user, so treat every item as pending confirmation.',
-  'GRANULARITY RULE: if a resume section lists multiple bullet points, responsibilities, or achievements under one job or project, extract EACH bullet as its own separate fact item. Never merge two or more bullets into a single fact value. Never summarize multiple bullets into one shorter sentence.',
-  "Do not further split a single bullet's internal enumerated list (e.g. a comma-separated list of tool names or skill names within one bullet) into multiple facts unless the resume itself already separates them into distinct bullets. Keep such an enumeration together as one fact value.",
+  'GRANULARITY RULE FOR JOBS/PROJECTS: group by real-world context, not by bullet punctuation. If multiple bullet points describe the same job or the same project, merge them into ONE fact item for that job/project, so the resulting fact value reads as one coherent card covering what it is, when, role, stack, and what was done. Only keep bullets as separate fact items when they describe genuinely different jobs, different projects, or unrelated topics (e.g. skills vs. education vs. a different project). This rule is STRICTLY scoped to bullets within the SAME job or SAME project. NEVER apply it across two different jobs or two different projects: each distinct job (different company/role/duration) and each distinct project must remain its own separate fact item, never merged with another distinct job or project even if that would reduce the total count.',
+  'GRANULARITY RULE FOR SHORT IDENTITY/INTENT FIELDS: this is a SEPARATE rule, unrelated to jobs/projects above, and only applies to short factual fields that carry no wording-amplification risk. Merge ALL personal contact fields (name, gender, age, phone, email, current city, etc.) into ONE "personal" fact item. Merge ALL job-search intent fields (target role, expected salary, expected city, etc.) into ONE "job_search" fact item. Merge one school\'s institution + major + degree + duration into ONE "education" fact item per school (a different school stays a separate item). This rule never applies to jobs, projects, skills, or any experience narrative — those follow the job/project rule above, where each distinct job and each distinct project must stay separate.',
+  "While merging bullets or fields under the same job, project, or category into one fact value, you must preserve the original wording as closely as possible: keep every sentence's or field's original phrasing, keep every qualifier (e.g. 'course project', 'participated in', 'prototype'), and simply concatenate or lightly connect the original sentences/fields. Do not paraphrase, compress, summarize, or rewrite them into a shorter or stronger-sounding sentence. Merging changes card boundaries only, never the wording strength of the content.",
   'Preserve every quantified metric (numbers, percentages, time durations) and every specific proper noun (tool names, technology names, named mechanisms) exactly as written, each retained in the fact it belongs to.',
   'Preserve the original language of the resume in every extracted value. Do not translate any value into another language, even if it would read more naturally. If the resume is in Chinese, all extracted values must remain in Chinese exactly as written.',
   'Return json with exactly this shape: {"facts":[{"category":"...","label":"...","value":"...","confidence":0.0}]}',
@@ -47,21 +40,12 @@ const RESUME_EXTRACTION_SYSTEM_PROMPT = [
 ].join("\n");
 
 export async function extractFactsFromResume(input: ResumeExtractionInput): Promise<ProfileFact[]> {
-  const sourceRef = input.sourceRef?.trim() || defaultSourceRef(input.kind);
-  const raw =
-    input.kind === "text"
-      ? await input.client.completeText({
-          system: RESUME_EXTRACTION_SYSTEM_PROMPT,
-          user: buildTextUserPrompt(input.resumeText),
-          responseFormatJson: true
-        })
-      : await input.client.completeVision({
-          system: RESUME_EXTRACTION_SYSTEM_PROMPT,
-          user: buildImageUserPrompt(),
-          imageBase64: input.imageBase64,
-          mimeType: input.mimeType,
-          responseFormatJson: true
-        });
+  const sourceRef = input.sourceRef?.trim() || defaultSourceRef();
+  const raw = await input.client.completeText({
+    system: RESUME_EXTRACTION_SYSTEM_PROMPT,
+    user: buildTextUserPrompt(input.resumeText),
+    responseFormatJson: true
+  });
 
   const parsed = parseEnvelope(raw);
   if (!parsed) {
@@ -92,12 +76,8 @@ function buildTextUserPrompt(resumeText: string): string {
   return [`Resume text:`, resumeText.trim()].join("\n");
 }
 
-function buildImageUserPrompt(): string {
-  return "Read this resume image and extract only supported resume facts as json.";
-}
-
-function defaultSourceRef(kind: ResumeExtractionInput["kind"]): string {
-  return kind === "text" ? "resume_text" : "resume_image";
+function defaultSourceRef(): string {
+  return "resume_text";
 }
 
 function parseEnvelope(raw: string): ResumeFactEnvelope | null {

@@ -12,7 +12,7 @@ vi.mock('pdfjs-dist/build/pdf.mjs', () => ({
   GlobalWorkerOptions: {},
 }))
 
-import { extractPdfResume, hasUsablePdfText, normalizePdfText } from '../domain/pdfResume'
+import { PdfTextLayerMissingError, extractPdfResume, hasUsablePdfText, normalizePdfText } from '../domain/pdfResume'
 
 function createPdfFile(): File {
   return {
@@ -52,33 +52,23 @@ describe('pdfResume', () => {
       destroy,
     })
 
-    await expect(extractPdfResume(createPdfFile())).resolves.toEqual({
-      kind: 'text',
-      resumeText: '张三\n产品经理\n负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。',
-    })
+    await expect(extractPdfResume(createPdfFile())).resolves.toBe(
+      '张三\n产品经理\n负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。',
+    )
     expect(page.render).not.toHaveBeenCalled()
     expect(destroy).toHaveBeenCalledOnce()
   })
 
-  it('renders a textless PDF to PNG for the image OCR fallback', async () => {
+  it('[D025] 无文字层 PDF（扫描件/图片型）明确抛错，不静默失败、不降级成图片识别', async () => {
     const page = createPage([])
     getDocument.mockReturnValue({
       promise: Promise.resolve({ numPages: 1, getPage: vi.fn(async () => page) }),
       destroy,
     })
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      fillStyle: '',
-      fillRect: vi.fn(),
-      drawImage: vi.fn(),
-    } as unknown as CanvasRenderingContext2D)
-    vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,rendered-pdf-page')
 
-    await expect(extractPdfResume(createPdfFile())).resolves.toEqual({
-      kind: 'image',
-      imageBase64: 'rendered-pdf-page',
-      mimeType: 'image/png',
-    })
-    expect(page.render).toHaveBeenCalledOnce()
-    expect(destroy).toHaveBeenCalledOnce()
+    await expect(extractPdfResume(createPdfFile())).rejects.toBeInstanceOf(PdfTextLayerMissingError)
+    await expect(extractPdfResume(createPdfFile())).rejects.toThrow('没有文字层')
+    expect(page.render).not.toHaveBeenCalled()
+    expect(destroy).toHaveBeenCalledTimes(2)
   })
 })

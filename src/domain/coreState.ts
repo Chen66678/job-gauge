@@ -195,6 +195,16 @@ export function getConfirmedFacts(state: CoreState): ProfileFact[] {
   return state.factLibrary.filter((fact) => fact.status === "confirmed");
 }
 
+export function clearFactLibrary(state: CoreState): CoreState {
+  return withUpdatedAt({ ...state, factLibrary: [] });
+}
+
+export function deleteFact(state: CoreState, factId: string): CoreState {
+  const nextFactLibrary = state.factLibrary.filter((fact) => fact.id !== factId);
+  if (nextFactLibrary.length === state.factLibrary.length) return state;
+  return withUpdatedAt({ ...state, factLibrary: nextFactLibrary });
+}
+
 export function serializeCoreState(state: CoreState): string {
   return JSON.stringify(state);
 }
