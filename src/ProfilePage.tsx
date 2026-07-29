@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { FactStatus, ProfileFact } from './types'
-import type { WorkflowApi, WorkflowState } from './WorkflowPage'
+import type { WorkflowApi, WorkflowState } from './workflowApi'
 import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import './ProfilePage.css'

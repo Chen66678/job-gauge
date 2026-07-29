@@ -13,7 +13,7 @@ vi.mock('../domain/pdfResume', () => ({ extractPdfResume, isPdfFile }))
 
 import OnboardingPage from '../OnboardingPage'
 import type { CoreState } from '../domain/coreState'
-import type { WorkflowApi } from '../WorkflowPage'
+import type { WorkflowApi } from '../workflowApi'
 
 afterEach(() => {
   cleanup()

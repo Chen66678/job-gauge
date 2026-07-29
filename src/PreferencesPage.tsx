@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import type { PreferenceRuleSet } from './types'
-import type { WorkflowApi } from './WorkflowPage'
+import type { WorkflowApi } from './workflowApi'
 import { unwrap, errorText as message } from './coreApiResult'
 import './OnboardingPage.css'
 

@@ -1,23 +1,18 @@
 import { useState } from 'react'
 import { Tooltip } from 'antd'
 import JobListPage from './JobListPage'
+import CustomResumePage from './CustomResumePage'
+import FollowUpDrawer from './FollowUpDrawer'
 import OnboardingPage from './OnboardingPage'
 import PreferencesPage from './PreferencesPage'
 import ProfilePage from './ProfilePage'
 import SettingsPage from './SettingsPage'
-import WorkflowPage, { type WorkflowStep } from './WorkflowPage'
 
-type Page = 'home' | 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding'
+type Page = 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding' | 'customResume'
 
 // Compact, filled navigation glyphs. They are intentionally not part of the
 // usual thin-outline admin icon family: the rail should feel like a small
 // desktop tool, not a dashboard template.
-const IconHome = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h3A2.5 2.5 0 0 1 12 5.5v3A2.5 2.5 0 0 1 9.5 11h-3A2.5 2.5 0 0 1 4 8.5v-3Zm8 10A2.5 2.5 0 0 1 14.5 13h3a2.5 2.5 0 0 1 2.5 2.5v3a2.5 2.5 0 0 1-2.5 2.5h-3a2.5 2.5 0 0 1-2.5-2.5v-3ZM14.5 3h3A2.5 2.5 0 0 1 20 5.5v3a2.5 2.5 0 0 1-2.5 2.5h-3A2.5 2.5 0 0 1 12 8.5v-3A2.5 2.5 0 0 1 14.5 3ZM4 15.5A2.5 2.5 0 0 1 6.5 13h3a2.5 2.5 0 0 1 0 5h-3A2.5 2.5 0 0 1 4 15.5Z"/>
-  </svg>
-)
-
 const IconList = () => (
   <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
     <path d="M5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v1.5A2.75 2.75 0 0 1 18.25 11H5.75A2.75 2.75 0 0 1 3 8.25v-1.5A2.75 2.75 0 0 1 5.75 4Zm0 9h12.5A2.75 2.75 0 0 1 21 15.75v1.5A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25v-1.5A2.75 2.75 0 0 1 5.75 13Z"/>
@@ -41,7 +36,6 @@ const IconSettings = () => (
 )
 
 const NAV_ITEMS = [
-  { id: 'home' as Page, label: '首页', Icon: IconHome },
   { id: 'jobs' as Page, label: '岗位列表', Icon: IconList },
   { id: 'profile' as Page, label: '我的资料', Icon: IconProfile },
 ]
@@ -49,18 +43,15 @@ const NAV_ITEMS = [
 export default function App() {
   const [page, setPage] = useState<Page>(() => localStorage.getItem('onboardingCompleted') === 'true' ? 'jobs' : 'onboarding')
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
-  const [workflowInitialStep, setWorkflowInitialStep] = useState<WorkflowStep | undefined>()
+  const [followUpJobId, setFollowUpJobId] = useState<string | null>(null)
 
   const startWorkflow = (jobId: string) => {
     setSelectedJobId(jobId)
-    setWorkflowInitialStep(undefined)
-    setPage('home')
+    setPage('customResume')
   }
 
   const openFollowUp = (jobId: string) => {
-    setSelectedJobId(jobId)
-    setWorkflowInitialStep('JOB_FOLLOW_UP')
-    setPage('home')
+    setFollowUpJobId(jobId)
   }
 
   return (
@@ -101,9 +92,7 @@ export default function App() {
       {/* ── Main ── */}
       <main className="app-main">
         {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} onOpenFollowUp={openFollowUp} onOpenProfile={() => setPage('profile')} />}
-        {page === 'home' && (
-          <WorkflowPage selectedJobId={selectedJobId} initialStep={workflowInitialStep} onOpenProfile={() => setPage('profile')} />
-        )}
+        {page === 'customResume' && selectedJobId && <CustomResumePage jobId={selectedJobId} onBack={() => setPage('jobs')} />}
         {page === 'profile' && <ProfilePage />}
         {page === 'preferences' && <PreferencesPage onBack={() => setPage('settings')} />}
         {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
@@ -111,6 +100,11 @@ export default function App() {
           <SettingsPage onOpenPreferences={() => setPage('preferences')} onOpenOnboarding={() => setPage('onboarding')} />
         )}
       </main>
+      <FollowUpDrawer
+        jobId={followUpJobId}
+        onClose={() => setFollowUpJobId(null)}
+        onOpenProfile={() => { setFollowUpJobId(null); setPage('profile') }}
+      />
     </div>
   )
 }

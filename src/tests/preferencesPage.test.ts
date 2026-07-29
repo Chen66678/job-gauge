@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PreferencesPage from '../PreferencesPage'
 import type { CoreState } from '../domain/coreState'
-import type { WorkflowApi } from '../WorkflowPage'
+import type { WorkflowApi } from '../workflowApi'
 
 const preferenceState = {
   preferences: {

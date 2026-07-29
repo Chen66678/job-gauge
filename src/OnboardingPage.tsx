@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import type { FactStatus, ProfileFact } from './types'
-import type { WorkflowApi } from './WorkflowPage'
+import type { WorkflowApi } from './workflowApi'
 import { unwrap, errorText } from './coreApiResult'
 import './OnboardingPage.css'
 

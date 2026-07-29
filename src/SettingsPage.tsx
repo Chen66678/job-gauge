@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { WorkflowApi } from './WorkflowPage'
+import type { WorkflowApi } from './workflowApi'
 import type { FactStatus, ProfileFact } from './types'
 import { unwrap, errorText as formatError } from './coreApiResult'
 

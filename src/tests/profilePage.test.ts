@@ -12,7 +12,7 @@ const { extractPdfResume, isPdfFile } = vi.hoisted(() => ({
 vi.mock('../domain/pdfResume', () => ({ extractPdfResume, isPdfFile }))
 
 import ProfilePage from '../ProfilePage'
-import type { WorkflowApi, WorkflowState } from '../WorkflowPage'
+import type { WorkflowApi, WorkflowState } from '../workflowApi'
 
 afterEach(() => {
   cleanup()
