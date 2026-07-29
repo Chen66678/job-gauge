@@ -1,11 +1,12 @@
 {
+  "extends": "./.wxt/tsconfig.json",
   "compilerOptions": {
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["wxt/browser"]
+    "types": ["wxt/browser", "chrome"]
   },
-  "include": ["entrypoints/**/*.ts", "wxt.config.ts"]
+  "include": ["entrypoints/**/*.ts", "wxt.config.ts", ".wxt/wxt.d.ts"]
 }

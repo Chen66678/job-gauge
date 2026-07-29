@@ -3,7 +3,8 @@
 // Read-only: this only queries tab state and asks the content script to
 // extract text. It never injects code that clicks/submits/navigates.
 
-const JOB_DETAIL_PATTERN = /^https:\/\/www\.zhipin\.com\/job_detail\//;
+const JOB_DETAIL_PATTERN =
+  /^https:\/\/www\.zhipin\.com\/(job_detail\/|web\/geek\/jobs|web\/geek\/job-recommend)/;
 
 type PostResult = { ok: true } | { ok: false; error: string };
 
@@ -26,12 +27,12 @@ async function init() {
   const url = tab?.url ?? '';
 
   if (!tab?.id || !JOB_DETAIL_PATTERN.test(url)) {
-    messageEl.textContent = '请在 BOSS 直聘岗位详情页使用';
+    messageEl.textContent = '请在 BOSS 直聘岗位详情页或推荐页使用';
     sendBtn.style.display = 'none';
     return;
   }
 
-  messageEl.textContent = '当前岗位已就绪';
+  messageEl.textContent = '请先在左侧点选一个岗位，再点击下方按钮采集';
   sendBtn.style.display = 'block';
 
   sendBtn.addEventListener('click', async () => {
