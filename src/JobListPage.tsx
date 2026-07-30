@@ -18,7 +18,14 @@ type MockJob = {
   strategyLabel: string
   strategyClass: 'recommend' | 'suggest' | 'consider' | 'skip'
   pinned: boolean
-  skills: { label: string; pct: number | null; confident: boolean; question?: string }[]
+  skills: {
+    label: string
+    pct: number | null
+    gap: string | null
+    measured: boolean
+    tier: 'strong' | 'partial' | 'weak' | 'unmeasured'
+    question?: string
+  }[]
   jdSummary: string[]
   requirements: string[]
   industry: string
@@ -170,7 +177,10 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
     skills: requirements.map(requirement => {
       const result = requirementResults.find(item => item.label === requirement.label)
       const pct = result && result.maxScore > 0 ? Math.round(result.score / result.maxScore * 100) : null
-      return { label: requirement.label, pct, confident: Boolean(result && !result.gap), question: requirement.evidence }
+      const gap = result?.gap ?? null
+      const measured = pct !== null
+      const tier = pct === null ? 'unmeasured' : pct >= 75 ? 'strong' : pct >= 40 ? 'partial' : 'weak'
+      return { label: requirement.label, pct, gap, measured, tier, question: requirement.evidence }
     }),
     jdSummary: record.job.jdText ? [record.job.jdText] : [],
     requirements: requirements.map(requirement => requirement.label),
@@ -228,8 +238,10 @@ function StrategyBadge({ job }: { job: MockJob }) {
 
 // ─── Expanded Detail Panel ───────────────────────────────────────
 function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onOpenFollowUp?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
-  const pendingCount = job.skills.filter(skill => !skill.confident).length
-  const confirmedEvidence = job.skills.filter(skill => skill.confident && (skill.pct ?? 0) >= 70)
+  const pendingCount = job.skills.filter(skill => !skill.measured).length
+  const confirmedEvidence = job.skills
+    .filter(skill => skill.measured)
+    .sort((left, right) => (right.pct ?? 0) - (left.pct ?? 0))
   const [jdDetailsOpen, setJdDetailsOpen] = useState(false)
   const jdDetailsId = `job-jd-details-${job.id}`
 
@@ -253,22 +265,29 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
               not a machine-generated checklist. */}
           <section className="decision-column">
             <div className="decision-section-title">匹配依据</div>
-            {confirmedEvidence.length > 0 && (
+            {confirmedEvidence.some(skill => skill.tier === 'strong') && (
               <div className="fact-chip-list" aria-label="已确认依据">
-                {confirmedEvidence.map(skill => <span className="fact-chip" key={skill.label}>✓ 已确认 {skill.label}</span>)}
+                {confirmedEvidence
+                  .filter(skill => skill.tier === 'strong')
+                  .map(skill => <span className="fact-chip" key={skill.label}>✓ 已确认 {skill.label}</span>)}
               </div>
             )}
             <div className="decision-list">
               {confirmedEvidence.map(s => (
                 <div key={s.label} className="evidence-item">
                   <div className="evidence-line">
-                    <span className="evidence-name">{s.label}</span>
-                    <div className="evidence-bar" aria-hidden="true">
-                      <div className="evidence-bar-fill" style={{ width: `${s.pct}%` }} />
+                    <div className="evidence-name-wrap">
+                      <span className={`tier-badge tier-${s.tier}`}>{s.tier === 'strong' ? '符合' : s.tier === 'partial' ? '部分符合' : '匹配较弱'}</span>
+                      <span className="evidence-name">{s.label}</span>
                     </div>
-                    <span className="evidence-score">{s.pct}%</span>
+                    <div className="evidence-bar" aria-hidden="true">
+                      <div className={`evidence-bar-fill tier-${s.tier}`} style={{ width: `${s.pct}%` }} />
+                    </div>
+                    <span className={`evidence-score tier-${s.tier}`}>{s.pct}%</span>
                   </div>
-                  <div className="evidence-note">已有经历覆盖这项核心要求</div>
+                  <div className="evidence-note">
+                    {s.gap ?? (s.tier === 'strong' ? '已有经历覆盖这项核心要求' : s.tier === 'partial' ? '部分匹配该要求' : '与要求有距离')}
+                  </div>
                 </div>
               ))}
               {confirmedEvidence.length === 0 && (
@@ -293,7 +312,7 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
                     <span className="consideration-note">当前经历与要求仍有距离</span>
                   </div>
                 ))}
-                {job.skills.filter(skill => !skill.confident).map(skill => (
+                {job.skills.filter(skill => !skill.measured).map(skill => (
                   <div key={skill.label} className="consideration-item pending">
                     <div className="consideration-copy">
                       <span className="consideration-name">{skill.label}：经历尚未确认</span>
@@ -337,10 +356,10 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
           {jdDetailsOpen && (
             <div className="jd-collapse-content" id={jdDetailsId}>
               <div className="detail-grid">
-                {job.skills.some(skill => !skill.confident) && (
+                {job.skills.some(skill => !skill.measured) && (
                   <div className="skill-matrix">
                     <div className="detail-jd-col-label">尚未确认的经历</div>
-                    {job.skills.filter(skill => !skill.confident).map(skill => (
+                    {job.skills.filter(skill => !skill.measured).map(skill => (
                       <div key={skill.label} className="skill-row">
                         <span className="skill-label">{skill.label}</span>
                         <span className="skill-value unknown">未确认</span>
@@ -417,8 +436,15 @@ function JobRow({
   // Max 1 risk + 1 gap in collapsed row
   const visibleRisks = job.risks.slice(0, 1)
   const visibleGaps = job.gaps.slice(0, 1)
-  const matchEvidence = job.skills.find(skill => skill.confident && (skill.pct ?? 0) >= 70)
-  const matchedRequirements = job.skills.filter(skill => skill.confident).length
+  const sortedMeasuredSkills = job.skills
+    .filter(skill => skill.measured)
+    .sort((left, right) => (right.pct ?? 0) - (left.pct ?? 0))[0]
+  const strongMatchEvidence = job.skills
+    .filter(skill => skill.tier === 'strong')
+    .sort((left, right) => (right.pct ?? 0) - (left.pct ?? 0))[0]
+  const partialMatchEvidence = sortedMeasuredSkills?.tier === 'partial' ? sortedMeasuredSkills : undefined
+  const matchEvidence = strongMatchEvidence ?? partialMatchEvidence
+  const matchedRequirements = job.skills.filter(skill => skill.tier === 'strong').length
 
   return (
     <div className="job-row-wrap">
@@ -487,7 +513,11 @@ function JobRow({
         <div className="r1-title job-name">{job.title}</div>
 
         <div className="r1-reason job-signals">
-          {matchEvidence && <span className="match-chip" title={`匹配依据：${matchEvidence.label}`}>✓ {matchEvidence.label}</span>}
+          {matchEvidence && (
+            <span className="match-chip" title={`匹配依据：${matchEvidence.label}`}>
+              {matchEvidence.tier === 'strong' ? `✓ ${matchEvidence.label}` : `部分符合 ${matchEvidence.label}`}
+            </span>
+          )}
           {visibleRisks.map(r => (
             <span key={r} className="signal-text risk" title={`风险：${r}`} aria-label={`风险：${r}`}>{r}</span>
           ))}

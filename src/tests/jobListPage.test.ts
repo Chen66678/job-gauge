@@ -42,8 +42,7 @@ function buildState(score: number | null, evaluationError: string | null = null)
           gaps: ['TypeScript 经验'],
           risks: [],
           breakdown: { requirements: [
-            { label: 'React 项目经验', score: 8, maxScore: 10, gap: null },
-            { label: 'TypeScript 经验', score: 0, maxScore: 10, gap: '经历尚未确认' },
+            { label: 'React 项目经验', score: 8, maxScore: 10, gap: null as string | null },
           ] },
         },
       },
@@ -57,6 +56,23 @@ function buildState(score: number | null, evaluationError: string | null = null)
       }],
     }],
   }
+}
+
+function buildTieredState() {
+  const state = buildState(62)
+  state.jobs[0].job.requirements = [
+    { label: '需求分析经验', evidence: '参与需求分析', requiredFactIds: [] },
+    { label: '数据建模能力', evidence: '维护数据模型', requiredFactIds: [] },
+    { label: '行业知识', evidence: '', requiredFactIds: [] },
+  ]
+  if (state.jobs[0].evaluation && !state.jobs[0].evaluation.vetoed) {
+    state.jobs[0].evaluation.score.gaps = []
+    state.jobs[0].evaluation.score.breakdown.requirements = [
+      { label: '需求分析经验', score: 6, maxScore: 10, gap: '缺少独立负责复杂需求的案例' },
+      { label: '数据建模能力', score: 3, maxScore: 10, gap: null },
+    ]
+  }
+  return state
 }
 
 afterEach(() => {
@@ -124,5 +140,40 @@ describe('JobListPage', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows measured requirements by tier and keeps unmeasured requirements separate', async () => {
+    window.coreApi = {
+      getState: vi.fn(async () => buildTieredState()),
+      onStateChanged: vi.fn(() => () => undefined),
+      setJobPinned: vi.fn(),
+      reevaluateJob: vi.fn(),
+      evaluateJobFromJd: vi.fn(),
+    } as unknown as typeof window.coreApi
+
+    render(createElement(JobListPage))
+
+    await screen.findByText('前端工程师')
+    expect(screen.getByText('部分符合 需求分析经验')).not.toBeNull()
+    fireEvent.click(screen.getByText('前端工程师'))
+
+    const partialScore = screen.getByText('60%')
+    const weakScore = screen.getByText('30%')
+    const partialBar = partialScore.parentElement?.querySelector('.evidence-bar-fill')
+    const weakBar = weakScore.parentElement?.querySelector('.evidence-bar-fill')
+    expect(partialScore.classList.contains('tier-partial')).toBe(true)
+    expect(weakScore.classList.contains('tier-weak')).toBe(true)
+    expect(partialBar?.classList.contains('tier-partial')).toBe(true)
+    expect(weakBar?.classList.contains('tier-weak')).toBe(true)
+    expect(partialBar?.getAttribute('style')).toContain('width: 60%')
+    expect(weakBar?.getAttribute('style')).toContain('width: 30%')
+    expect(screen.getByText('缺少独立负责复杂需求的案例')).not.toBeNull()
+    expect(screen.getByText('与要求有距离')).not.toBeNull()
+    expect(screen.getByText('部分符合').classList.contains('tier-partial')).toBe(true)
+    expect(screen.getByText('匹配较弱').classList.contains('tier-weak')).toBe(true)
+    expect(screen.queryByText('✓ 已确认 需求分析经验')).toBeNull()
+    expect(screen.queryByText('✓ 已确认 数据建模能力')).toBeNull()
+    expect(screen.getByText('行业知识：经历尚未确认')).not.toBeNull()
+    expect(screen.queryByText('行业知识', { selector: '.evidence-name' })).toBeNull()
   })
 })

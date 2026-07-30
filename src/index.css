@@ -495,6 +495,7 @@ body {
   align-items: baseline;
   gap: 14px;
 }
+.evidence-name-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .evidence-name,
 .consideration-name { font-size: 14px; font-weight: 550; color: var(--text-primary); }
 .evidence-bar {
@@ -510,12 +511,22 @@ body {
   background: var(--indigo);
   transition: width 320ms ease;
 }
+.evidence-bar-fill.tier-strong { background: var(--indigo); }
+.evidence-bar-fill.tier-partial { background: var(--yellow-icon); }
+.evidence-bar-fill.tier-weak { background: var(--gray-disabled); }
 .evidence-score {
   font-size: 13px;
   color: var(--indigo-light);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+.evidence-score.tier-strong { color: var(--indigo); }
+.evidence-score.tier-partial { color: var(--yellow-text); }
+.evidence-score.tier-weak { color: var(--text-muted); }
+.tier-badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid; line-height: 16px; white-space: nowrap; }
+.tier-badge.tier-strong { color: var(--indigo); border-color: var(--indigo-border); background: var(--indigo-bg); }
+.tier-badge.tier-partial { color: var(--yellow-text); border-color: var(--yellow-border); background: var(--yellow-bg); }
+.tier-badge.tier-weak { color: var(--text-muted); border-color: var(--gray-border); background: var(--gray-bg); }
 .evidence-note,
 .consideration-note,
 .empty-evidence {
