@@ -109,6 +109,11 @@ type FollowUpBadge = {
   clickable: boolean
 }
 
+type ReevaluationSnapshot = {
+  before: number | null
+  at: number
+}
+
 function getFollowUpFacts(record: CoreState['jobs'][number], factLibrary: CoreState['factLibrary']) {
   const questionPrefixes = record.followUps.map(followUp => `反问:${followUp.question.slice(0, 20)}`)
   return factLibrary.filter(fact => (
@@ -222,9 +227,15 @@ function StrategyBadge({ job }: { job: MockJob }) {
 }
 
 // ─── Expanded Detail Panel ───────────────────────────────────────
-function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
+function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onOpenFollowUp?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
   const pendingCount = job.skills.filter(skill => !skill.confident).length
   const confirmedEvidence = job.skills.filter(skill => skill.confident && (skill.pct ?? 0) >= 70)
+  const [jdDetailsOpen, setJdDetailsOpen] = useState(false)
+  const jdDetailsId = `job-jd-details-${job.id}`
+
+  useEffect(() => {
+    if (!open) setJdDetailsOpen(false)
+  }, [open])
 
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
@@ -290,73 +301,77 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
                     </div>
                   </div>
                 ))}
+                {pendingCount > 0 && (
+                  <div className="consideration-followup">
+                    <button type="button" onClick={() => onOpenFollowUp?.(job.id)}>补一下这些信息 →</button>
+                    <span>补充后可重新评估，并更新这里的分数。</span>
+                  </div>
+                )}
               </div>
             </section>
           )}
         </div>
 
-        {/* ── Section 3: 岗位详情 ── */}
-        <div className="decision-section job-detail-section">
-          <div className="decision-section-title">岗位详情</div>
+        <div className="meta-row">
+          {job.industry && <span style={{ color: 'var(--text-muted)' }}>{job.industry}</span>}
+          {job.commute && <span>通勤 {job.commute}</span>}
+          <span>{job.salary}</span>
+          {job.workAddress && <span>{job.workAddress}</span>}
+          {job.sourceUrl ? (
+            <a className="meta-link" href={job.sourceUrl} target="_blank" rel="noreferrer">查看原岗位 ↗</a>
+          ) : (
+            <span className="meta-link disabled" title="当前岗位没有保存来源链接">原岗位链接未保存</span>
+          )}
+        </div>
 
-          <div className="detail-grid">
-            {job.skills.some(skill => !skill.confident) && (
-              <div className="skill-matrix">
-                <div className="detail-jd-col-label">尚未确认的经历</div>
-                {job.skills
-                  .filter(skill => !skill.confident)
-                  .map(skill => (
-                    <div key={skill.label} className="skill-row">
-                      <span className="skill-label">{skill.label}</span>
-                      <span className="skill-value unknown">未确认</span>
-                    </div>
-                  ))}
+        <div className="jd-collapse">
+          <button
+            type="button"
+            className="jd-collapse-toggle"
+            aria-expanded={jdDetailsOpen}
+            aria-controls={jdDetailsId}
+            onClick={() => setJdDetailsOpen(previous => !previous)}
+          >
+            查看完整 JD {jdDetailsOpen ? '▴' : '▾'}
+          </button>
+          {jdDetailsOpen && (
+            <div className="jd-collapse-content" id={jdDetailsId}>
+              <div className="detail-grid">
+                {job.skills.some(skill => !skill.confident) && (
+                  <div className="skill-matrix">
+                    <div className="detail-jd-col-label">尚未确认的经历</div>
+                    {job.skills.filter(skill => !skill.confident).map(skill => (
+                      <div key={skill.label} className="skill-row">
+                        <span className="skill-label">{skill.label}</span>
+                        <span className="skill-value unknown">未确认</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(job.jdSummary.length > 0 || job.requirements.length > 0) && (
+                  <div className="detail-jd-cols">
+                    {job.jdSummary.length > 0 && (
+                      <div className="detail-jd-col">
+                        <div className="detail-jd-col-label">岗位职责</div>
+                        <ul className="detail-jd-list">
+                          {job.jdSummary.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                    {job.requirements.length > 0 && (
+                      <div className="detail-jd-col">
+                        <div className="detail-jd-col-label">任职要求</div>
+                        <ul className="detail-jd-list">
+                          {job.requirements.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-
-            {(job.jdSummary.length > 0 || job.requirements.length > 0) && (
-              <div className="detail-jd-cols">
-              {job.jdSummary.length > 0 && (
-                <div className="detail-jd-col">
-                  <div className="detail-jd-col-label">岗位职责</div>
-                  <ul className="detail-jd-list">
-                    {job.jdSummary.map((item, i) => <li key={i}>{item}</li>)}
-                  </ul>
-                </div>
-              )}
-              {job.requirements.length > 0 && (
-                <div className="detail-jd-col">
-                  <div className="detail-jd-col-label">任职要求</div>
-                  <ul className="detail-jd-list">
-                    {job.requirements.map((item, i) => <li key={i}>{item}</li>)}
-                  </ul>
-                </div>
-              )}
-              </div>
-            )}
-          </div>
-
-          {/* Meta */}
-          <div className="meta-row" style={{ marginTop: 10 }}>
-            {job.industry && <span style={{ color: 'var(--text-muted)' }}>{job.industry}</span>}
-            {job.commute && <span>通勤 {job.commute}</span>}
-            <span>{job.salary}</span>
-            {job.workAddress && <span>{job.workAddress}</span>}
-            {job.sourceUrl ? (
-              <a
-                className="meta-link"
-                href={job.sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                查看原岗位 ↗
-              </a>
-            ) : (
-              <span className="meta-link disabled" title="当前岗位没有保存来源链接">
-                原岗位链接未保存
-              </span>
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         {/* ── Actions ── */}
@@ -376,13 +391,14 @@ function ExpandPanel({ job, open, onStartWorkflow, onRetry }: { job: MockJob; op
 
 // ─── Job Row ──────────────────────────────────────────────────────
 function JobRow({
-  job, record, factLibrary, deferredReevaluation, reevaluating, expanded, onToggle, onPin, onStartWorkflow, onOpenFollowUp, onOpenProfile, onRetry, onReevaluate, onDeferReevaluation
+  job, record, factLibrary, deferredReevaluation, reevaluating, reevaluationSnapshot, expanded, onToggle, onPin, onStartWorkflow, onOpenFollowUp, onOpenProfile, onRetry, onReevaluate, onDeferReevaluation
 }: {
   job: MockJob
   record: CoreState['jobs'][number]
   factLibrary: CoreState['factLibrary']
   deferredReevaluation: boolean
   reevaluating: boolean
+  reevaluationSnapshot?: ReevaluationSnapshot
   expanded: boolean
   onToggle: () => void
   onPin: () => void
@@ -432,6 +448,11 @@ function JobRow({
               <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>排队</span>
             )}
             </div>
+          )}
+          {!isPending && !reevaluating && reevaluationSnapshot && job.score !== null && (
+            <span className={`score-change-badge ${reevaluationSnapshot.before === job.score ? 'unchanged' : 'changed'}`} role="status">
+              {reevaluationSnapshot.before === job.score ? '分数未变' : `${reevaluationSnapshot.before ?? '—'} → ${job.score}`}
+            </span>
           )}
         </div>
 
@@ -504,7 +525,7 @@ function JobRow({
         </div>
       )}
 
-      <ExpandPanel job={job} open={expanded} onStartWorkflow={onStartWorkflow} onRetry={onRetry} />
+      <ExpandPanel job={job} open={expanded} onStartWorkflow={onStartWorkflow} onOpenFollowUp={onOpenFollowUp} onRetry={onRetry} />
     </div>
   )
 }
@@ -516,11 +537,36 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   const [factLibrary, setFactLibrary] = useState<CoreState['factLibrary']>([])
   const [deferredReevalJobIds, setDeferredReevalJobIds] = useState<Set<string>>(new Set())
   const [reevaluatingJobIds, setReevaluatingJobIds] = useState<Set<string>>(new Set())
+  const [reevaluateSnapshots, setReevaluateSnapshots] = useState<Map<string, ReevaluationSnapshot>>(new Map())
+  const [completedReevaluationJobIds, setCompletedReevaluationJobIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>('1')
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'salary'>('score')
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
+  const reevaluationPendingSeenRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const completedSnapshots = [...reevaluateSnapshots.entries()].filter(([jobId]) => completedReevaluationJobIds.has(jobId))
+    if (completedSnapshots.length === 0) return
+
+    const timers = completedSnapshots.map(([jobId, snapshot]) => window.setTimeout(() => {
+      setReevaluateSnapshots(previous => {
+        if (previous.get(jobId)?.at !== snapshot.at) return previous
+        const next = new Map(previous)
+        next.delete(jobId)
+        return next
+      })
+      setCompletedReevaluationJobIds(previous => {
+        const next = new Set(previous)
+        next.delete(jobId)
+        return next
+      })
+      reevaluationPendingSeenRef.current.delete(jobId)
+    }, 4500))
+
+    return () => timers.forEach(timer => window.clearTimeout(timer))
+  }, [completedReevaluationJobIds, reevaluateSnapshots])
 
   useEffect(() => {
     let active = true
@@ -540,9 +586,24 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
 
     const unsubscribe = window.coreApi.onStateChanged(state => {
       if (!active) return
-      setJobs(state.jobs.map(toDisplayJob))
+      const nextJobs = state.jobs.map(toDisplayJob)
+      setJobs(nextJobs)
       setRecords(state.jobs)
       setFactLibrary(state.factLibrary)
+      setReevaluateSnapshots(currentSnapshots => {
+        const completedIds = [...currentSnapshots.keys()].filter(jobId => {
+          const nextJob = nextJobs.find(job => job.id === jobId)
+          if (nextJob?.score === null) {
+            reevaluationPendingSeenRef.current.add(jobId)
+            return false
+          }
+          return nextJob && reevaluationPendingSeenRef.current.has(jobId)
+        })
+        if (completedIds.length > 0) {
+          setCompletedReevaluationJobIds(previous => new Set([...previous, ...completedIds]))
+        }
+        return currentSnapshots
+      })
       setLoading(false)
     })
 
@@ -604,6 +665,14 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   }, [])
 
   const handleReevaluate = useCallback((id: string) => {
+    const before = jobs.find(job => job.id === id)?.score ?? null
+    setReevaluateSnapshots(previous => new Map(previous).set(id, { before, at: Date.now() }))
+    setCompletedReevaluationJobIds(previous => {
+      const next = new Set(previous)
+      next.delete(id)
+      return next
+    })
+    reevaluationPendingSeenRef.current.delete(id)
     setReevaluatingJobIds(previous => new Set(previous).add(id))
     window.coreApi.reevaluateJob(id)
       .then(unwrap)
@@ -612,13 +681,26 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
         next.delete(id)
         return next
       }))
-      .catch(reason => setError(errorText(reason)))
+      .catch(reason => {
+        setError(errorText(reason))
+        setReevaluateSnapshots(previous => {
+          const next = new Map(previous)
+          next.delete(id)
+          return next
+        })
+        setCompletedReevaluationJobIds(previous => {
+          const next = new Set(previous)
+          next.delete(id)
+          return next
+        })
+        reevaluationPendingSeenRef.current.delete(id)
+      })
       .finally(() => setReevaluatingJobIds(previous => {
         const next = new Set(previous)
         next.delete(id)
         return next
       }))
-  }, [])
+  }, [jobs])
 
   const handleDeferReevaluation = useCallback((id: string) => {
     setDeferredReevalJobIds(previous => new Set(previous).add(id))
@@ -697,6 +779,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
                   factLibrary={factLibrary}
                   deferredReevaluation={deferredReevalJobIds.has(job.id)}
                   reevaluating={reevaluatingJobIds.has(job.id)}
+                  reevaluationSnapshot={completedReevaluationJobIds.has(job.id) ? reevaluateSnapshots.get(job.id) : undefined}
                   expanded={expandedId === job.id}
                   onToggle={() => toggleExpand(job.id)}
                   onPin={() => togglePin(job.id)}
@@ -750,6 +833,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
               factLibrary={factLibrary}
               deferredReevaluation={deferredReevalJobIds.has(job.id)}
               reevaluating={reevaluatingJobIds.has(job.id)}
+              reevaluationSnapshot={completedReevaluationJobIds.has(job.id) ? reevaluateSnapshots.get(job.id) : undefined}
               expanded={expandedId === job.id}
               onToggle={() => toggleExpand(job.id)}
               onPin={() => togglePin(job.id)}

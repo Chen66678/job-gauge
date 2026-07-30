@@ -3,10 +3,12 @@ import type { FactStatus, ProfileFact } from './types'
 import type { WorkflowApi, WorkflowState } from './workflowApi'
 import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
+import FollowUpDrawer from './FollowUpDrawer'
 import './ProfilePage.css'
 
 type ResumeInput = { kind: 'text'; resumeText: string }
 type UndoState = { factId: string; previousStatus: FactStatus } | null
+const DEFAULT_FACT_CATEGORIES = ['工作经历', '技能', '教育', '偏好']
 
 function sourceLabel(sourceType: ProfileFact['sourceType']) {
   return sourceType === 'resume' ? '简历解析' : sourceType === 'user_answer' ? '反问补充' : '手动添加'
@@ -38,8 +40,15 @@ export default function ProfilePage() {
   const [editingValue, setEditingValue] = useState('')
   const [undo, setUndo] = useState<UndoState>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [manualAddOpen, setManualAddOpen] = useState(false)
+  const [manualContent, setManualContent] = useState('')
+  const [manualCategory, setManualCategory] = useState('')
+  const [manualSubmitting, setManualSubmitting] = useState(false)
+  const [resumeFollowUpCount, setResumeFollowUpCount] = useState(0)
+  const [resumeFollowUpOpen, setResumeFollowUpOpen] = useState(false)
   const undoTimerRef = useRef<number | null>(null)
   const saveMessageTimerRef = useRef<number | null>(null)
+  const resumeFollowUpsCheckedRef = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const refreshState = async () => {
@@ -55,6 +64,17 @@ export default function ProfilePage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!state?.factLibrary.some(fact => fact.sourceType === 'resume') || resumeFollowUpsCheckedRef.current) return
+    resumeFollowUpsCheckedRef.current = true
+    api.buildResumeFollowUps()
+      .then(result => setResumeFollowUpCount(unwrap(result).length))
+      .catch(reason => {
+        setError(formatError(reason))
+        setResumeFollowUpCount(0)
+      })
+  }, [api, state])
+
   const run = async (action: () => Promise<void>) => {
     setError(null)
     try { await action() } catch (reason) { setError(formatError(reason)) }
@@ -63,6 +83,8 @@ export default function ProfilePage() {
   const uploadResume = async (input: ResumeInput) => {
     setParsing(true)
     setParseError(null)
+    setResumeFollowUpCount(0)
+    resumeFollowUpsCheckedRef.current = false
     try {
       unwrap(await api.ingestResume(input))
       setResumeInput(null)
@@ -135,6 +157,29 @@ export default function ProfilePage() {
     })
   }
 
+  const showSaveMessage = (message: string) => {
+    setSaveMessage(message)
+    if (saveMessageTimerRef.current !== null) window.clearTimeout(saveMessageTimerRef.current)
+    saveMessageTimerRef.current = window.setTimeout(() => setSaveMessage(null), 3000)
+  }
+
+  const submitManualFact = () => {
+    const content = manualContent.trim()
+    if (!content || !manualCategory) return
+    void run(async () => {
+      setManualSubmitting(true)
+      try {
+        unwrap(await api.addManualFact({ content, category: manualCategory }))
+        await refreshState()
+        setManualContent('')
+        setManualAddOpen(false)
+        showSaveMessage('事实已添加并标记为已确认')
+      } finally {
+        setManualSubmitting(false)
+      }
+    })
+  }
+
   const facts = state?.factLibrary ?? []
   const unconfirmedFacts = facts.filter(fact => fact.status === 'unconfirmed')
   const processedFacts = facts.filter(fact => fact.status !== 'unconfirmed')
@@ -142,6 +187,9 @@ export default function ProfilePage() {
     groups[fact.category] = [...(groups[fact.category] ?? []), fact]
     return groups
   }, {})
+  const categoryOptions = Object.keys(groupedFacts)
+  const availableCategories = categoryOptions.length ? categoryOptions : DEFAULT_FACT_CATEGORIES
+  const selectedManualCategory = manualCategory || availableCategories[0]
   const confirmedCount = facts.filter(fact => fact.status === 'confirmed').length
 
   const factCard = (fact: ProfileFact, processed = false) => (
@@ -169,16 +217,17 @@ export default function ProfilePage() {
   return <section className="profile-page" aria-label="我的资料">
     <div className="page-header"><h1>我的资料</h1><div className="meta">共 {facts.length} 条事实 · 已确认 {confirmedCount} 条</div></div>
     <div className="section-head profile-section-first"><span className="dot d-indigo" /><span className="section-title">简历</span></div>
-    {parsing ? <div className="parsing"><span className="p-spin">◌</span><div><div className="p-txt">正在解析简历…</div><div className="p-warn">解析期间请勿关闭窗口，关闭后需重新上传。</div></div></div> : parseError ? <div className="parse-fail"><div className="pf-title">简历解析失败</div><div className="pf-sub">{parseError}</div><div className="pf-actions"><button className="btn-retry" onClick={() => { setParseError(null); fileInputRef.current?.click() }}><UploadIcon />重新上传</button></div></div> : facts.length ? <div className="resume-card"><div className="resume-row"><div className="resume-icon"><ResumeIcon /></div><div className="resume-body"><div className="resume-title"><span className="ok-dot"><CheckIcon /></span>简历已解析，提取出 <b>{facts.length}</b> 条事实</div><div className="resume-sub">如需更新简历，可重新上传 PDF 或粘贴文字——原有已确认事实不会自动覆盖</div></div><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />重新上传</button></div></div> : <div className="empty-state"><div className="empty-icon"><ResumeIcon /></div><div className="empty-title">上传简历，建立你的事实库</div><div className="empty-sub">解析后可逐条确认工作经历、技能与偏好，为岗位评估提供依据。</div></div>}
+    {parsing ? <div className="parsing"><span className="p-spin">◌</span><div><div className="p-txt">正在解析简历…</div><div className="p-warn">解析期间请勿关闭窗口，关闭后需重新上传。</div></div></div> : parseError ? <div className="parse-fail"><div className="pf-title">简历解析失败</div><div className="pf-sub">{parseError}</div><div className="pf-actions"><button className="btn-retry" onClick={() => { setParseError(null); fileInputRef.current?.click() }}><UploadIcon />重新上传</button></div></div> : facts.length ? <div className="resume-card"><div className="resume-row"><div className="resume-icon"><ResumeIcon /></div><div className="resume-body"><div className="resume-title"><span className="ok-dot"><CheckIcon /></span>简历已解析，提取出 <b>{facts.length}</b> 条事实</div><div className="resume-sub">如需更新简历，可重新上传 PDF 或粘贴文字——原有已确认事实不会自动覆盖</div></div><div className="resume-actions">{resumeFollowUpCount > 0 && <button className="primary-button" onClick={() => setResumeFollowUpOpen(true)}>完善简历信息（{resumeFollowUpCount} 问）</button>}<button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />重新上传</button></div></div></div> : <div className="empty-state"><div className="empty-icon"><ResumeIcon /></div><div className="empty-title">上传简历，建立你的事实库</div><div className="empty-sub">解析后可逐条确认工作经历、技能与偏好，为岗位评估提供依据。</div></div>}
     <div className="drop-zone"><div className="dz-icon"><UploadIcon /></div><div className="dz-title">上传 PDF、文本简历或粘贴简历内容</div><div className="dz-sub">支持 PDF、TXT、Markdown 格式</div><div className="dz-actions"><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />选择文件</button><button className="btn btn-primary" onClick={parseTypedResume} disabled={parsing}>解析简历</button></div>{selectedFileName && <p className="resume-title"><span className="ok-dot"><CheckIcon /></span>已选择文件：{selectedFileName}</p>}<textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} placeholder="粘贴简历文本" aria-label="粘贴简历文本" rows={4} /><input ref={fileInputRef} className="profile-file-input" type="file" accept=".txt,.md,.pdf" onChange={event => void fileSelected(event.target.files?.[0])} /></div>
     {error && <p role="alert" className="profile-error">{error}</p>}
     <div className="section-head"><span className="dot d-indigo" /><span className="section-title">事实库</span></div>
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}
     {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{category}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
     {facts.length === 0 && !parsing && !parseError && <div className="empty-state facts-empty"><div className="empty-title">还没有可确认的事实</div><div className="empty-sub">上传并解析简历后，事实会按类别展示在这里。</div></div>}
-    <div className="manual-add" aria-disabled="true"><div className="ma-icon">+</div><div className="ma-body"><div className="ma-title">手动添加事实</div><div className="ma-sub">手动录入的事实直接标记为已确认，参与后续评估</div></div><span className="ma-tag">即将开放</span></div>
+    {!manualAddOpen ? <button className="manual-add" type="button" onClick={() => { setManualCategory(selectedManualCategory); setManualAddOpen(true) }}><span className="ma-icon">+</span><span className="ma-body"><span className="ma-title">手动添加事实</span><span className="ma-sub">手动录入的事实直接标记为已确认，参与后续评估</span></span></button> : <form className="manual-add manual-add-form" onSubmit={event => { event.preventDefault(); submitManualFact() }}><div className="manual-field"><label htmlFor="manual-fact-content">事实内容</label><textarea id="manual-fact-content" className="manual-control manual-textarea" value={manualContent} onChange={event => setManualContent(event.target.value)} placeholder="例如：主导过日活百万级产品的性能优化" /></div><div className="manual-field"><label htmlFor="manual-fact-category">类别</label><select id="manual-fact-category" className="manual-control" value={selectedManualCategory} onChange={event => setManualCategory(event.target.value)}>{availableCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></div><div className="manual-actions"><button className="primary-button" type="submit" disabled={!manualContent.trim() || manualSubmitting}>{manualSubmitting ? '添加中…' : '添加'}</button><button className="text-button" type="button" onClick={() => { setManualAddOpen(false); setManualContent('') }} disabled={manualSubmitting}>取消</button></div></form>}
     {processedFacts.length > 0 && <div className="processed-section"><button className="processed-toggle" onClick={() => setProcessedOpen(open => !open)}>{processedOpen ? '⌄' : '›'} 已处理事实（{processedFacts.length}）</button>{processedOpen && <div className="processed-list">{processedFacts.map(fact => factCard(fact, true))}</div>}</div>}
     {undo && <div className="undo-toast" role="status"><CloseIcon /><span>已排除该事实</span><button className="ut-undo" onClick={undoReject}>撤销</button></div>}
     {saveMessage && <div className="undo-toast" role="status"><span>{saveMessage}</span></div>}
+    {resumeFollowUpOpen && <FollowUpDrawer mode="resume" onClose={() => setResumeFollowUpOpen(false)} onOpenProfile={() => setResumeFollowUpOpen(false)} onSubmitted={() => { setResumeFollowUpCount(0); void refreshState() }} />}
   </section>
 }

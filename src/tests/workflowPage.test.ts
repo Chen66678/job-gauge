@@ -148,6 +148,42 @@ describe('FollowUpDrawer', () => {
     await screen.findByRole('heading', { name: '提交成功' })
     expect(applyFollowUpAnswers).toHaveBeenCalledTimes(2)
   })
+
+  it('loads and submits resume follow-ups without job reevaluation', async () => {
+    const resumeQuestions = [{
+      id: 'resume-question-1',
+      requirementId: 'resume-refine',
+      kind: 'explore' as const,
+      question: '这个项目服务了多少用户？',
+      rationale: '补充项目规模能让简历事实更具体。',
+    }]
+    const applyResumeFollowUpAnswers = vi.fn(async () => [buildFact()])
+    const reevaluateJob = vi.fn()
+    window.coreApi = {
+      getState: vi.fn(async () => ({ factLibrary: [], jobs: [] })),
+      buildResumeFollowUps: vi.fn(async () => resumeQuestions),
+      applyResumeFollowUpAnswers,
+      reevaluateJob,
+    } as unknown as typeof window.coreApi
+
+    render(createElement(FollowUpDrawer, {
+      mode: 'resume',
+      onClose: vi.fn(),
+      onOpenProfile: vi.fn(),
+    }))
+
+    await screen.findByText('简历补充')
+    expect(screen.getByText('完善简历事实')).not.toBeNull()
+    expect(screen.queryByText(/针对要求/)).toBeNull()
+    fireEvent.change(screen.getByLabelText('补充回答'), { target: { value: '日活超过一百万' } })
+    fireEvent.click(screen.getByRole('button', { name: '提交全部' }))
+
+    await screen.findByRole('heading', { name: '提交成功' })
+    expect(applyResumeFollowUpAnswers).toHaveBeenCalledWith(resumeQuestions, [
+      { questionId: 'resume-question-1', answerText: '日活超过一百万' },
+    ])
+    expect(reevaluateJob).not.toHaveBeenCalled()
+  })
 })
 
 describe('CustomResumePage', () => {
@@ -200,5 +236,50 @@ describe('CustomResumePage', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试' }))
     await screen.findByText('重试成功')
     expect(draftMaterial).toHaveBeenCalledTimes(2)
+  })
+
+  it('allows export for needs-review material without exposing internal notes', async () => {
+    window.coreApi = {
+      draftMaterial: vi.fn(async () => ({
+        status: 'needs_review' as const,
+        greeting: '您好',
+        resumeLines: [{ text: '负责核心项目', factIds: ['fact-1'] }],
+        usedFacts: [{ factId: 'fact-1', label: '核心项目', value: '负责核心项目', source: 'resume' }],
+        blockedFacts: [],
+        guardrailNotes: ['internal-only-note'],
+      })),
+      exportResume: vi.fn(async () => '# 定制简历'),
+    } as unknown as typeof window.coreApi
+
+    render(createElement(CustomResumePage, { jobId: 'job-new', onBack: vi.fn() }))
+
+    await screen.findByText('这份材料有需要你复核的地方')
+    expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(false)
+    expect(screen.getByText('resume')).not.toBeNull()
+    expect(screen.queryByText('internal-only-note')).toBeNull()
+  })
+
+  it('shows blocked facts, recovery action, and disables export', async () => {
+    const onBack = vi.fn()
+    window.coreApi = {
+      draftMaterial: vi.fn(async () => ({
+        status: 'blocked' as const,
+        greeting: '',
+        resumeLines: [],
+        usedFacts: [],
+        blockedFacts: [{ factId: 'fact-blocked', label: '项目规模', value: '', source: 'manual' }],
+        guardrailNotes: ['do-not-render'],
+      })),
+      exportResume: vi.fn(),
+    } as unknown as typeof window.coreApi
+
+    render(createElement(CustomResumePage, { jobId: 'job-new', onBack }))
+
+    await screen.findByText('部分关键事实无法安全写入')
+    expect(screen.getAllByText('项目规模').length).toBeGreaterThan(0)
+    expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '返回并补充资料 →' }))
+    expect(onBack).toHaveBeenCalledOnce()
+    expect(screen.queryByText('do-not-render')).toBeNull()
   })
 })

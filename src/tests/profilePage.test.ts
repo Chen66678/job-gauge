@@ -25,6 +25,7 @@ function buildApi(overrides: Partial<WorkflowApi> = {}) {
   const api = {
     getState: vi.fn(async () => state),
     ingestResume: vi.fn(async () => []),
+    buildResumeFollowUps: vi.fn(async () => []),
     ...overrides,
   } as unknown as WorkflowApi
   window.coreApi = api as unknown as typeof window.coreApi
@@ -76,5 +77,84 @@ describe('ProfilePage resume upload', () => {
 
     fireEvent.change(screen.getByPlaceholderText('粘贴简历文本'), { target: { value: '手动粘贴的文字' } })
     expect(screen.queryByText((_, element) => element?.textContent === '已选择文件：resume.pdf')).toBeNull()
+  })
+
+  it('shows the resume follow-up entry only after parsing returns questions', async () => {
+    const parsedState = {
+      factLibrary: [{ id: 'fact-1', category: '技能', label: 'React', value: '熟悉 React', sourceType: 'resume', sourceRef: 'resume_text', status: 'unconfirmed', confidence: 0.9 }],
+      jobs: [],
+    } as unknown as WorkflowState
+    const getState = vi.fn()
+      .mockResolvedValueOnce({ factLibrary: [], jobs: [] })
+      .mockResolvedValue(parsedState)
+    const api = buildApi({
+      getState,
+      buildResumeFollowUps: vi.fn(async () => [{ id: 'resume-q-1', question: '补充项目规模？', rationale: '完善经历' }]),
+    })
+
+    render(createElement(ProfilePage))
+    fireEvent.change(screen.getByPlaceholderText('粘贴简历文本'), { target: { value: '我的简历' } })
+    fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
+
+    expect(await screen.findByRole('button', { name: '完善简历信息（1 问）' })).not.toBeNull()
+    expect(api.buildResumeFollowUps).toHaveBeenCalledOnce()
+  })
+
+  it('loads the resume follow-up count for an existing parsed resume', async () => {
+    const state = {
+      factLibrary: [{ id: 'fact-1', category: '技能', label: 'React', value: '熟悉 React', sourceType: 'resume', sourceRef: 'resume_text', status: 'unconfirmed', confidence: 0.9 }],
+      jobs: [],
+    } as unknown as WorkflowState
+    const api = buildApi({
+      getState: vi.fn(async () => state),
+      buildResumeFollowUps: vi.fn(async () => [{ id: 'resume-q-1', question: '补充项目规模？', rationale: '完善经历' }]),
+    })
+
+    render(createElement(ProfilePage))
+
+    expect(await screen.findByRole('button', { name: '完善简历信息（1 问）' })).not.toBeNull()
+    expect(api.buildResumeFollowUps).toHaveBeenCalledOnce()
+  })
+})
+
+describe('ProfilePage manual facts', () => {
+  it('uses associated labels, blocks empty submission, and refreshes after adding', async () => {
+    const state = {
+      factLibrary: [{ id: 'fact-1', category: '技能', label: 'React', value: '熟悉 React', sourceType: 'resume', sourceRef: 'resume_text', status: 'unconfirmed', confidence: 0.9 }],
+      jobs: [],
+    } as unknown as WorkflowState
+    const addManualFact = vi.fn(async () => undefined)
+    const getState = vi.fn(async () => state)
+    buildApi({ getState, addManualFact })
+
+    render(createElement(ProfilePage))
+    fireEvent.click(await screen.findByRole('button', { name: /手动添加事实/ }))
+
+    const content = screen.getByLabelText('事实内容') as HTMLTextAreaElement
+    const category = screen.getByLabelText('类别') as HTMLSelectElement
+    const submit = screen.getByRole('button', { name: '添加' }) as HTMLButtonElement
+    expect(content.placeholder).toContain('主导过日活百万级产品')
+    expect(category.value).toBe('技能')
+    expect(submit.disabled).toBe(true)
+
+    fireEvent.change(content, { target: { value: '主导过日活百万级产品的性能优化' } })
+    fireEvent.click(submit)
+
+    await waitFor(() => expect(addManualFact).toHaveBeenCalledWith({ content: '主导过日活百万级产品的性能优化', category: '技能' }))
+    expect(getState).toHaveBeenCalledTimes(2)
+    expect((await screen.findByRole('status')).textContent).toContain('事实已添加并标记为已确认')
+    expect(screen.queryByLabelText('事实内容')).toBeNull()
+  })
+
+  it('falls back to the established default category set', async () => {
+    buildApi()
+    render(createElement(ProfilePage))
+
+    fireEvent.click(await screen.findByRole('button', { name: /手动添加事实/ }))
+
+    expect(screen.getByRole('option', { name: '工作经历' })).not.toBeNull()
+    expect(screen.getByRole('option', { name: '技能' })).not.toBeNull()
+    expect(screen.getByRole('option', { name: '教育' })).not.toBeNull()
+    expect(screen.getByRole('option', { name: '偏好' })).not.toBeNull()
   })
 })
