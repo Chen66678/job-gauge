@@ -1,9 +1,10 @@
 import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTION_RECORDS_KEY,
-  COLLECTED_JOB_COUNT_KEY,
   DETAIL_PANEL_STATUS_KEY,
   parseCollectionRecords,
+  resetSessionCollectedCount,
+  SESSION_COLLECTED_JOB_COUNT_KEY,
   type CollectionRecord,
 } from '../shared/collectionState';
 
@@ -14,12 +15,23 @@ const recordsEl = document.getElementById('records') as HTMLDivElement;
 const emptyStateEl = document.getElementById('empty-state') as HTMLDivElement;
 const panelStatusEl = document.getElementById('panel-status') as HTMLDivElement;
 
+// Three real states, not two: 'detected', 'not-detected', and undefined
+// (content script hasn't reported anything yet — e.g. just injected and
+// still initializing, or an older build predating this key). Collapsing
+// undefined into the same rendering as 'detected' is exactly the class of
+// bug that made the search-results page look silently idle instead of
+// visibly broken.
 function renderPanelStatus(value: unknown) {
-  const notDetected = value === 'not-detected';
-  panelStatusEl.className = notDetected ? 'not-detected' : 'detected';
-  panelStatusEl.textContent = notDetected
-    ? '当前页面未检测到岗位详情，请在左侧列表点选一个岗位'
-    : '';
+  if (value === 'not-detected') {
+    panelStatusEl.className = 'not-detected';
+    panelStatusEl.textContent = '当前页面未检测到岗位详情，请在左侧列表点选一个岗位';
+  } else if (value === 'detected') {
+    panelStatusEl.className = 'detected';
+    panelStatusEl.textContent = '';
+  } else {
+    panelStatusEl.className = 'unknown';
+    panelStatusEl.textContent = '尚未收到页面状态，请确认已打开 BOSS 直聘职位页';
+  }
 }
 
 function renderToggle(enabled: boolean) {
@@ -89,19 +101,23 @@ function renderRecords(value: unknown) {
 async function init() {
   const stored = await chrome.storage.local.get([
     AUTO_COLLECT_ENABLED_KEY,
-    COLLECTED_JOB_COUNT_KEY,
     COLLECTION_RECORDS_KEY,
     DETAIL_PANEL_STATUS_KEY,
   ]);
   const enabled = stored[AUTO_COLLECT_ENABLED_KEY] !== false;
   renderToggle(enabled);
-  renderCount(stored[COLLECTED_JOB_COUNT_KEY]);
   renderRecords(stored[COLLECTION_RECORDS_KEY]);
   renderPanelStatus(stored[DETAIL_PANEL_STATUS_KEY]);
 
   if (stored[AUTO_COLLECT_ENABLED_KEY] === undefined) {
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: true });
   }
+
+  // The sidebar is the surface that actually stays open while the user
+  // works, so "opening it" — not opening the popup — is the real "this
+  // round starts now" moment. Reset happens here, not in popup/main.ts.
+  renderCount(0);
+  await resetSessionCollectedCount();
 
   toggleEl.addEventListener('change', async () => {
     const nextEnabled = toggleEl.checked;
@@ -116,8 +132,8 @@ async function init() {
     if (changes[AUTO_COLLECT_ENABLED_KEY]) {
       renderToggle(changes[AUTO_COLLECT_ENABLED_KEY].newValue !== false);
     }
-    if (changes[COLLECTED_JOB_COUNT_KEY]) {
-      renderCount(changes[COLLECTED_JOB_COUNT_KEY].newValue);
+    if (changes[SESSION_COLLECTED_JOB_COUNT_KEY]) {
+      renderCount(changes[SESSION_COLLECTED_JOB_COUNT_KEY].newValue);
     }
     if (changes[COLLECTION_RECORDS_KEY]) {
       renderRecords(changes[COLLECTION_RECORDS_KEY].newValue);

@@ -3,6 +3,12 @@ export const COLLECTED_JOB_IDS_KEY = 'collectedJobIds';
 export const COLLECTED_JOB_COUNT_KEY = 'collectedJobCount';
 export const COLLECTION_RECORDS_KEY = 'collectionRecords';
 export const DETAIL_PANEL_STATUS_KEY = 'detailPanelStatus';
+// Distinct from COLLECTED_JOB_COUNT_KEY, which is a lifetime total tied to
+// the jobId dedup Set and never resets (that identity bookkeeping must not
+// change — it's what stops the same job from being POSTed to the backend
+// twice). This key is purely a display counter for "how many did I collect
+// since I last opened the panel", reset by the UI itself on each open.
+export const SESSION_COLLECTED_JOB_COUNT_KEY = 'sessionCollectedJobCount';
 
 export type CollectionRecord = {
   attemptedAt: string;
@@ -33,6 +39,17 @@ export function parseCollectionRecords(value: unknown): CollectionRecord[] {
       && (record.jobId === undefined || typeof record.jobId === 'string')
       && (record.jobIdSource === undefined || typeof record.jobIdSource === 'string');
   });
+}
+
+export async function incrementSessionCollectedCount(): Promise<void> {
+  const stored = await chrome.storage.local.get(SESSION_COLLECTED_JOB_COUNT_KEY);
+  const current = stored[SESSION_COLLECTED_JOB_COUNT_KEY];
+  const next = (typeof current === 'number' && Number.isFinite(current) ? current : 0) + 1;
+  await chrome.storage.local.set({ [SESSION_COLLECTED_JOB_COUNT_KEY]: next });
+}
+
+export async function resetSessionCollectedCount(): Promise<void> {
+  await chrome.storage.local.set({ [SESSION_COLLECTED_JOB_COUNT_KEY]: 0 });
 }
 
 export function appendCollectionRecord(record: CollectionRecord): Promise<void> {

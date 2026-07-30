@@ -31,6 +31,7 @@ import {
   COLLECTED_JOB_COUNT_KEY,
   COLLECTED_JOB_IDS_KEY,
   DETAIL_PANEL_STATUS_KEY,
+  incrementSessionCollectedCount,
   type CollectionRecord,
 } from './shared/collectionState';
 
@@ -544,6 +545,7 @@ async function collectCurrentJob(): Promise<BackgroundResult> {
 
     if (result.ok) {
       await rememberCollectedJob(jobId);
+      await incrementSessionCollectedCount();
       markCurrentJobCollected();
     }
 
@@ -598,7 +600,14 @@ function scheduleAutoCollect() {
 // sibling of the title node, so it never alters the title's own text.
 function observeDetailPanel() {
   let lastTitle = '';
-  let lastPanelDetected = false;
+  // null = "never reported yet" (distinct from a real false), so the very
+  // first evaluate() — even if it lands on "not detected" — still writes.
+  // Initializing this to `false` was the second visibility bug found on a
+  // page where the title never resolves at all: "not detected" and "not
+  // detected but not yet distinguished from initial false" rendered
+  // identically, i.e. never wrote anything, i.e. looked exactly like
+  // "normal, just idle" from the sidebar's point of view.
+  let lastPanelDetected: boolean | null = null;
 
   const evaluate = () => {
     const currentTitle = extractTitle();

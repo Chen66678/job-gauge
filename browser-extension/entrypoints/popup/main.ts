@@ -1,6 +1,6 @@
 import {
   AUTO_COLLECT_ENABLED_KEY,
-  COLLECTED_JOB_COUNT_KEY,
+  SESSION_COLLECTED_JOB_COUNT_KEY,
 } from '../shared/collectionState';
 
 const toggleEl = document.getElementById('auto-collect-toggle') as HTMLInputElement;
@@ -24,11 +24,11 @@ function renderCount(value: unknown) {
 async function init() {
   const stored = await chrome.storage.local.get([
     AUTO_COLLECT_ENABLED_KEY,
-    COLLECTED_JOB_COUNT_KEY,
+    SESSION_COLLECTED_JOB_COUNT_KEY,
   ]);
   const enabled = stored[AUTO_COLLECT_ENABLED_KEY] !== false;
   renderToggle(enabled);
-  renderCount(stored[COLLECTED_JOB_COUNT_KEY]);
+  renderCount(stored[SESSION_COLLECTED_JOB_COUNT_KEY]);
 
   if (stored[AUTO_COLLECT_ENABLED_KEY] === undefined) {
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: true });
@@ -61,8 +61,8 @@ async function init() {
     if (changes[AUTO_COLLECT_ENABLED_KEY]) {
       renderToggle(changes[AUTO_COLLECT_ENABLED_KEY].newValue !== false);
     }
-    if (changes[COLLECTED_JOB_COUNT_KEY]) {
-      renderCount(changes[COLLECTED_JOB_COUNT_KEY].newValue);
+    if (changes[SESSION_COLLECTED_JOB_COUNT_KEY]) {
+      renderCount(changes[SESSION_COLLECTED_JOB_COUNT_KEY].newValue);
     }
   });
 }
