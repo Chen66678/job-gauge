@@ -142,7 +142,9 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
   const scoreResult = evaluation && !evaluation.vetoed ? evaluation.score : null
   const strategy = scoreResult?.strategy
   const strategyClass = strategy === 'personalize' ? 'recommend' : strategy === 'generic_apply' ? 'suggest' : strategy === 'skip' ? 'skip' : 'consider'
-  const scoreTier = record.evaluationError ? 'low' : score === null ? (evaluation ? 'low' : 'unevaluated') : score >= 80 ? 'high' : score >= 70 ? 'mid' : 'low'
+  const scoreTier = evaluation === null && record.evaluationError === null
+    ? 'pending'
+    : record.evaluationError ? 'low' : score === null ? (evaluation ? 'low' : 'unevaluated') : score >= 80 ? 'high' : score >= 70 ? 'mid' : 'low'
   const requirements = record.job.requirements
   const requirementResults = scoreResult?.breakdown.requirements ?? []
 

@@ -429,6 +429,39 @@ describe("coreApi", () => {
     expect(api.getState().jobs.find((item) => item.job.id === record.job.id)).toBeDefined();
   });
 
+  it("keeps existing followUps and material when re-evaluating a job fails", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    const jobBase = {
+      title: "前端工程师",
+      company: "样例科技",
+      city: "上海",
+      salaryK: [20, 30] as [number, number],
+      companyTags: ["SaaS"]
+    };
+
+    const first = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+
+    const questions = buildQuestions();
+    orchestrationMocks.buildFollowUps.mockResolvedValueOnce(questions);
+    await api.buildFollowUps(first.job.id);
+    const material = await api.draftMaterial(first.job.id);
+
+    const beforeRetry = api.getState().jobs.find((item) => item.job.id === first.job.id);
+    expect(beforeRetry?.followUps).toEqual(questions);
+    expect(beforeRetry?.material).toEqual(material);
+
+    // 重采同一岗位(常驻采集下用户路过同一岗位很常见),这次评估失败。
+    orchestrationMocks.ingestJd.mockRejectedValueOnce(new Error("模型服务无响应"));
+    const retried = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+
+    expect(retried.evaluation).toBeNull();
+    expect(retried.evaluationError).toBe("模型服务无响应");
+    // 失败不应静默清空用户已经答过的追问、已经生成的材料。
+    expect(retried.followUps).toEqual(questions);
+    expect(retried.material).toEqual(material);
+  });
+
   it("[D026] applies follow-up answers as confirmed facts and persists them", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });

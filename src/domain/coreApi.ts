@@ -199,7 +199,7 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
       return preferences;
     },
 
-    async evaluateJobFromJd(input) {
+    evaluateJobFromJd(input) {
       const jdText = redactSecretValues(input.jdText);
       const baseJob = assembleJobPosting({
         base: {
@@ -215,73 +215,88 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         requirements: [],
         risks: []
       });
+      const previous = getJobRecord(state, baseJob.id);
+      // 重采同一岗位时不清空既有 followUps/material —— 这两个字段只在评估
+      // 真正跑完（成功路径）时才应被覆盖；异步窗口内若失败，catch 分支会
+      // 直接基于这条基础记录合并，若这里先清空就无从恢复。
+      const baseRecord: CoreJobRecord = {
+        job: previous ? { ...baseJob, pinned: previous.job.pinned } : baseJob,
+        evaluation: null,
+        evaluationError: null,
+        followUps: previous?.followUps ?? [],
+        material: previous?.material ?? null,
+        updatedAt: new Date().toISOString()
+      };
+      persist(upsertJobRecord(state, baseRecord));
 
-      try {
-        const parsedJd = await ingestJd({
-          jdText,
-          client: deps.client
-        });
-        const job = assembleJobPosting({
-          base: {
-            title: input.jobBase.title,
-            company: input.jobBase.company,
-            city: input.jobBase.city,
-            salaryK: input.jobBase.salaryK,
-            companyTags: input.jobBase.companyTags,
+      return (async () => {
+        try {
+          const parsedJd = await ingestJd({
             jdText,
-            workAddress: input.jobBase.workAddress,
-            sourceUrl: input.jobBase.sourceUrl
-          },
-          requirements: parsedJd.requirements,
-          risks: parsedJd.risks
-        });
-        const evaluation = await evaluateJob({
-          profile: buildWorkingProfile(),
-          job,
-          client: deps.client,
-          riskSensitivity: state.preferences?.riskSensitivity,
-          hardVeto: state.preferences?.hardVeto
-        });
+            client: deps.client
+          });
+          const job = assembleJobPosting({
+            base: {
+              title: input.jobBase.title,
+              company: input.jobBase.company,
+              city: input.jobBase.city,
+              salaryK: input.jobBase.salaryK,
+              companyTags: input.jobBase.companyTags,
+              jdText,
+              workAddress: input.jobBase.workAddress,
+              sourceUrl: input.jobBase.sourceUrl
+            },
+            requirements: parsedJd.requirements,
+            risks: parsedJd.risks
+          });
+          const evaluation = await evaluateJob({
+            profile: buildWorkingProfile(),
+            job,
+            client: deps.client,
+            riskSensitivity: state.preferences?.riskSensitivity,
+            hardVeto: state.preferences?.hardVeto
+          });
 
-        // await 之后必须基于当前 state 重取记录再合并，否则并发写入（置顶、
-        // 反问等）会被本次 await 前的旧快照覆盖。下同。
-        const previous = getJobRecord(state, job.id);
-        const record: CoreJobRecord = {
-          job: previous ? { ...job, pinned: previous.job.pinned } : job,
-          evaluation: evaluation.vetoed
-            ? {
-                vetoed: true,
-                vetoRuleId: evaluation.vetoRule.id,
-                vetoRuleLabel: evaluation.vetoRule.label
-              }
+          // await 之后必须基于当前 state 重取记录再合并，否则并发写入（置顶、
+          // 反问等）会被本次 await 前的旧快照覆盖。下同。
+          const previous = getJobRecord(state, job.id);
+          const record: CoreJobRecord = {
+            job: previous ? { ...job, pinned: previous.job.pinned } : job,
+            evaluation: evaluation.vetoed
+              ? {
+                  vetoed: true,
+                  vetoRuleId: evaluation.vetoRule.id,
+                  vetoRuleLabel: evaluation.vetoRule.label
+                }
+              : {
+                  vetoed: false,
+                  score: evaluation.score
+                },
+            evaluationError: null,
+            followUps: [],
+            material: null,
+            updatedAt: new Date().toISOString()
+          };
+
+          persist(upsertJobRecord(state, record));
+          return getJobRecord(state, job.id) ?? record;
+        } catch (error) {
+          const evaluationError = error instanceof Error ? error.message : String(error);
+          const current = getJobRecord(state, baseJob.id);
+          const failedRecord: CoreJobRecord = current
+            ? { ...current, evaluationError, updatedAt: new Date().toISOString() }
             : {
-                vetoed: false,
-                score: evaluation.score
-              },
-          evaluationError: null,
-          followUps: [],
-          material: null,
-          updatedAt: new Date().toISOString()
-        };
-
-        persist(upsertJobRecord(state, record));
-        return getJobRecord(state, job.id) ?? record;
-      } catch (error) {
-        const evaluationError = error instanceof Error ? error.message : String(error);
-        const previous = getJobRecord(state, baseJob.id);
-        const failedRecord: CoreJobRecord = previous
-          ? { ...previous, evaluationError, updatedAt: new Date().toISOString() }
-          : {
-              job: baseJob,
-              evaluation: null,
-              evaluationError,
-              followUps: [],
-              material: null,
-              updatedAt: new Date().toISOString()
-            };
-        persist(upsertJobRecord(state, failedRecord));
-        return getJobRecord(state, baseJob.id) ?? failedRecord;
-      }
+                job: baseJob,
+                evaluation: null,
+                evaluationError,
+                followUps: [],
+                material: null,
+                updatedAt: new Date().toISOString()
+              };
+          persist(upsertJobRecord(state, failedRecord));
+          return getJobRecord(state, baseJob.id) ?? failedRecord;
+        }
+      })();
     },
 
     setJobPinned(jobId, pinned) {

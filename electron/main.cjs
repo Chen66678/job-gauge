@@ -309,9 +309,9 @@ async function startJobApi(core, localApiToken) {
         if (!input || typeof input !== "object" || typeof input.title !== "string" || typeof input.company !== "string" || typeof input.description !== "string") {
           return sendJson(response, 400, { error: "title, company, and description are required" }, origin);
         }
-        // evaluateJobFromJd 对评估失败 fail-closed 到落盘记录（不抛），插件侧收到
-        // 200 即代表"岗位已入库"，评估成功与否留给渲染进程读 evaluationError 展示。
-        await core.api.evaluateJobFromJd({
+        // evaluateJobFromJd 会在首个模型 await 前同步落盘基础记录；后续评估不阻塞
+        // 插件响应，完成（含 fail-closed）后再推送最终状态给渲染进程。
+        void core.api.evaluateJobFromJd({
           jdText: input.description,
           jobBase: {
             title: input.title,
@@ -322,8 +322,10 @@ async function startJobApi(core, localApiToken) {
             workAddress: typeof input.workAddress === "string" ? input.workAddress : null,
             sourceUrl: typeof input.sourceUrl === "string" ? input.sourceUrl : null
           }
-        });
-        broadcastState(core);
+        }).then(
+          () => broadcastState(core),
+          () => broadcastState(core)
+        );
         return sendJson(response, 200, { ok: true }, origin);
       } catch (error) {
         return sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) }, origin);
