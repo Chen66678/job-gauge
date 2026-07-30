@@ -25,11 +25,16 @@ export interface JdPayload {
   sourceUrl: string | null;
 }
 
+import {
+  appendCollectionRecord,
+  AUTO_COLLECT_ENABLED_KEY,
+  COLLECTED_JOB_COUNT_KEY,
+  COLLECTED_JOB_IDS_KEY,
+  type CollectionRecord,
+} from './shared/collectionState';
+
 type BackgroundResult = { ok: true } | { ok: false; error: string };
 
-const AUTO_COLLECT_ENABLED_KEY = 'autoCollectEnabled';
-const COLLECTED_JOB_IDS_KEY = 'collectedJobIds';
-const COLLECTED_JOB_COUNT_KEY = 'collectedJobCount';
 const COLLECTED_MARKER_ATTRIBUTE = 'data-job-hq-collected-marker';
 const DETAIL_PANEL_SELECTOR = '.job-detail-container';
 const DETAIL_TITLE_SELECTOR = `${DETAIL_PANEL_SELECTOR} .job-name`;
@@ -53,6 +58,15 @@ function firstMatch(selectors: string[]): Element | null {
 
 function text(el: Element | null): string {
   return el?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
+function extractTitle(): string {
+  return text(firstMatch([
+    '.job-detail-container .job-name',
+    '.job-title h1',
+    'h1.name',
+    '.job-name',
+  ]));
 }
 
 // BOSS Zhipin pads job descriptions with zero-size/hidden spans (each paired
@@ -166,7 +180,24 @@ function extractSourceUrl(): string | null {
   return null;
 }
 
-function extractJobId(sourceUrl: string | null): string | null {
+type JobIdentity = {
+  jobId: string | null;
+  sourceUrl: string | null;
+  source: string | null;
+};
+
+const JOB_ID_ATTRIBUTES = [
+  'data-job-id',
+  'data-jobid',
+  'job-id',
+];
+const JOB_SECURITY_ID_ATTRIBUTES = [
+  'data-security-id',
+  'data-securityid',
+  'security-id',
+];
+
+function extractJobIdFromUrl(sourceUrl: string | null): string | null {
   if (!sourceUrl) {
     return null;
   }
@@ -191,13 +222,139 @@ function extractJobId(sourceUrl: string | null): string | null {
   return null;
 }
 
+function extractIdentityFromAttributes(
+  element: Element,
+  source: string,
+  includeSecurityId = false,
+): JobIdentity | null {
+  const attributes = includeSecurityId
+    ? [...JOB_ID_ATTRIBUTES, ...JOB_SECURITY_ID_ATTRIBUTES]
+    : JOB_ID_ATTRIBUTES;
+  for (const attribute of attributes) {
+    const value = element.getAttribute(attribute)?.trim();
+    if (value) {
+      return { jobId: value, sourceUrl: null, source: `${source}:${attribute}` };
+    }
+  }
+
+  return null;
+}
+
+function extractIdentityFromLink(link: HTMLAnchorElement, source: string): JobIdentity | null {
+  const href = link.getAttribute('href');
+  if (!href) {
+    return null;
+  }
+
+  try {
+    const sourceUrl = new URL(href, location.origin).toString();
+    const jobId = extractJobIdFromUrl(sourceUrl);
+    return jobId ? { jobId, sourceUrl, source: `${source}:href` } : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractJobIdentity(sourceUrl: string | null, title: string): JobIdentity {
+  const sourceUrlJobId = extractJobIdFromUrl(sourceUrl);
+  if (sourceUrlJobId) {
+    return { jobId: sourceUrlJobId, sourceUrl, source: 'detail-permalink' };
+  }
+
+  const panel = getDetailPanel();
+  if (panel) {
+    const panelCandidates = [
+      panel,
+      ...Array.from(panel.querySelectorAll([
+        '[data-job-id]',
+        '[data-jobid]',
+        '[job-id]',
+        '.job-detail-info',
+        '.job-detail-header',
+        '.job-name',
+      ].join(','))),
+    ];
+    for (const candidate of panelCandidates) {
+      const identity = extractIdentityFromAttributes(candidate, 'detail-panel');
+      if (identity) {
+        return { ...identity, sourceUrl: identity.sourceUrl ?? sourceUrl };
+      }
+    }
+
+    const panelJobLinks = panel.querySelectorAll<HTMLAnchorElement>('a[href*="/job_detail/"]');
+    for (const link of panelJobLinks) {
+      if (title && text(link).includes(title)) {
+        const identity = extractIdentityFromLink(link, 'detail-panel-job-link');
+        if (identity) {
+          return identity;
+        }
+      }
+    }
+  }
+
+  const selectedCardSelectors = [
+    '.job-card-wrap.active',
+    '.job-card-wrapper.active',
+    '.job-card-box.active',
+    '.job-card-wrap.selected',
+    '.job-card-wrapper.selected',
+    '.job-card-box.selected',
+    '[aria-selected="true"]',
+  ];
+  for (const selector of selectedCardSelectors) {
+    const selectedCard = document.querySelector(selector);
+    if (!selectedCard) {
+      continue;
+    }
+    const identity = extractIdentityFromAttributes(selectedCard, 'selected-job-card', true)
+      ?? extractIdentityFromAttributes(
+        selectedCard.querySelector('[data-job-id], [data-jobid], [job-id]') ?? selectedCard,
+        'selected-job-card-descendant',
+      )
+      ?? (() => {
+        const link = selectedCard.querySelector<HTMLAnchorElement>('a[href*="/job_detail/"]');
+        return link ? extractIdentityFromLink(link, 'selected-job-card-link') : null;
+      })();
+    if (identity) {
+      return { ...identity, sourceUrl: identity.sourceUrl ?? sourceUrl };
+    }
+  }
+
+  if (title) {
+    const jobCards = document.querySelectorAll([
+      '.job-card-wrap',
+      '.job-card-wrapper',
+      '.job-card-box',
+    ].join(','));
+    for (const card of jobCards) {
+      if (!text(card).includes(title)) {
+        continue;
+      }
+      const identity = extractIdentityFromAttributes(card, 'title-matched-job-card', true)
+        ?? (() => {
+          const link = card.querySelector<HTMLAnchorElement>('a[href*="/job_detail/"]');
+          return link ? extractIdentityFromLink(link, 'title-matched-job-card-link') : null;
+        })();
+      if (identity) {
+        return { ...identity, sourceUrl: identity.sourceUrl ?? sourceUrl };
+      }
+    }
+
+    const jobLinks = document.querySelectorAll<HTMLAnchorElement>('a[href*="/job_detail/"]');
+    for (const link of jobLinks) {
+      if (text(link).includes(title)) {
+        const identity = extractIdentityFromLink(link, 'title-matched-job-link');
+        if (identity) {
+          return { ...identity, sourceUrl: identity.sourceUrl ?? sourceUrl };
+        }
+      }
+    }
+  }
+
+  return { jobId: null, sourceUrl, source: null };
+}
+
 function extractJd(): JdPayload {
-  const titleEl = firstMatch([
-    '.job-detail-container .job-name',
-    '.job-title h1',
-    'h1.name',
-    '.job-name',
-  ]);
   const descriptionEl = firstMatch([
     '.job-detail-container p.desc',
     '.job-detail-body',
@@ -207,7 +364,7 @@ function extractJd(): JdPayload {
   ]);
 
   return {
-    title: text(titleEl) || document.title.trim(),
+    title: extractTitle(),
     company: extractCompany(),
     description: visibleText(descriptionEl),
     workAddress: extractWorkAddress(),
@@ -299,33 +456,73 @@ async function rememberCollectedJob(jobId: string) {
   });
 }
 
+async function recordCollectionResult(
+  result: BackgroundResult,
+  details: { title: string; jobId?: string; jobIdSource?: string },
+): Promise<BackgroundResult> {
+  const record: CollectionRecord = {
+    attemptedAt: new Date().toISOString(),
+    title: details.title,
+    result: result.ok ? 'success' : 'failure',
+    ...(!result.ok ? { error: result.error } : {}),
+    ...(details.jobId ? { jobId: details.jobId } : {}),
+    ...(details.jobIdSource ? { jobIdSource: details.jobIdSource } : {}),
+  };
+  await appendCollectionRecord(record);
+  return result;
+}
+
 async function collectCurrentJob(): Promise<BackgroundResult> {
+  let title = extractTitle();
+  let jobId: string | undefined;
+  let jobIdSource: string | undefined;
+
   if (collectionInProgress) {
     collectionQueued = true;
-    return { ok: false, error: '当前岗位正在采集中' };
+    return recordCollectionResult(
+      { ok: false, error: '当前岗位正在采集中' },
+      { title },
+    );
   }
 
   collectionInProgress = true;
   collectionQueued = false;
   try {
     await waitForStableDetail();
+    title = extractTitle();
     if (!autoCollectEnabled) {
-      return { ok: false, error: '自动采集已关闭' };
+      return recordCollectionResult(
+        { ok: false, error: '自动采集已关闭' },
+        { title },
+      );
     }
     const payload = extractJd();
+    title = payload.title;
 
     if (!payload.title && !payload.company && !payload.description) {
-      return { ok: false, error: '未能在页面中找到岗位信息，选择器可能已失效' };
+      return recordCollectionResult(
+        { ok: false, error: '未能在页面中找到岗位信息，选择器可能已失效' },
+        { title },
+      );
     }
 
-    const jobId = extractJobId(payload.sourceUrl);
+    const identity = extractJobIdentity(payload.sourceUrl, payload.title);
+    jobId = identity.jobId ?? undefined;
+    jobIdSource = identity.source ?? undefined;
+    payload.sourceUrl = identity.sourceUrl;
     if (!jobId) {
-      return { ok: false, error: '未能识别当前职位 id' };
+      return recordCollectionResult(
+        { ok: false, error: '未能识别当前职位 id' },
+        { title },
+      );
     }
 
     if (collectedJobIds.has(jobId)) {
       markCurrentJobCollected();
-      return { ok: true };
+      return recordCollectionResult(
+        { ok: true },
+        { title, jobId, jobIdSource },
+      );
     }
 
     const result = (await chrome.runtime.sendMessage({
@@ -338,12 +535,15 @@ async function collectCurrentJob(): Promise<BackgroundResult> {
       markCurrentJobCollected();
     }
 
-    return result;
+    return recordCollectionResult(result, { title, jobId, jobIdSource });
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+    return recordCollectionResult(
+      {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
+      { title, jobId, jobIdSource },
+    );
   } finally {
     collectionInProgress = false;
     if (collectionQueued && autoCollectEnabled) {

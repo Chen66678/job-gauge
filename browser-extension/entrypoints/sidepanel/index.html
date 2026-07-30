@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BOSS JD Reader</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #202124;
+        background: #f7f8fa;
+      }
+      body {
+        min-width: 280px;
+        margin: 0;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        padding: 18px 16px 14px;
+        border-bottom: 1px solid #e5e7eb;
+        background: rgb(255 255 255 / 96%);
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: 16px;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 12px;
+        align-items: center;
+      }
+      .label {
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .hint {
+        margin-top: 3px;
+        color: #6b7280;
+        font-size: 11px;
+      }
+      .switch-wrap {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .switch {
+        position: relative;
+        width: 42px;
+        height: 24px;
+      }
+      .switch input {
+        width: 0;
+        height: 0;
+        opacity: 0;
+      }
+      .slider {
+        position: absolute;
+        inset: 0;
+        border-radius: 12px;
+        background: #b8bdc5;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .slider::before {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 25%);
+        content: '';
+        transition: transform 0.2s;
+      }
+      input:checked + .slider {
+        background: #06ae56;
+      }
+      input:checked + .slider::before {
+        transform: translateX(18px);
+      }
+      #toggle-state {
+        min-width: 25px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      #toggle-state.enabled {
+        color: #078842;
+      }
+      #toggle-state.disabled {
+        color: #6b7280;
+      }
+      .count-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid #eef0f2;
+      }
+      #collected-count {
+        color: #078842;
+        font-size: 24px;
+        font-weight: 800;
+      }
+      main {
+        padding: 14px 12px 20px;
+      }
+      .section-heading {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding: 0 4px 10px;
+      }
+      h2 {
+        margin: 0;
+        font-size: 14px;
+      }
+      .section-note {
+        color: #8a9099;
+        font-size: 11px;
+      }
+      #records {
+        display: grid;
+        gap: 9px;
+      }
+      .record {
+        padding: 11px 12px;
+        border: 1px solid #e1e4e8;
+        border-left-width: 4px;
+        border-radius: 9px;
+        background: #fff;
+        box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+      }
+      .record.success {
+        border-left-color: #06ae56;
+      }
+      .record.failure {
+        border-left-color: #d93025;
+      }
+      .record-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .result {
+        flex: none;
+        border-radius: 999px;
+        padding: 2px 7px;
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .success .result {
+        color: #08783c;
+        background: #e8f8ef;
+      }
+      .failure .result {
+        color: #b42318;
+        background: #fcebea;
+      }
+      .time {
+        color: #6b7280;
+        font-size: 11px;
+      }
+      .title {
+        margin-top: 8px;
+        overflow-wrap: anywhere;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.4;
+      }
+      .title.empty {
+        color: #9aa0a6;
+        font-weight: 500;
+      }
+      .error {
+        margin-top: 6px;
+        color: #b42318;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+      #empty-state {
+        padding: 34px 18px;
+        border: 1px dashed #ccd1d8;
+        border-radius: 10px;
+        color: #737982;
+        background: #fff;
+        text-align: center;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>BOSS JD Reader</h1>
+      <div class="summary">
+        <div>
+          <div class="label">常驻自动采集</div>
+          <div class="hint">切换岗位后自动采集，失败会记录在下方</div>
+        </div>
+        <div class="switch-wrap">
+          <label class="switch" aria-label="常驻自动采集">
+            <input id="auto-collect-toggle" type="checkbox" />
+            <span class="slider"></span>
+          </label>
+          <span id="toggle-state" class="enabled">ON</span>
+        </div>
+      </div>
+      <div class="count-row">
+        <span class="label">已采集职位</span>
+        <span id="collected-count">0</span>
+      </div>
+    </header>
+    <main>
+      <div class="section-heading">
+        <h2>最近采集记录</h2>
+        <span class="section-note">最多保留 25 条</span>
+      </div>
+      <div id="records" aria-live="polite"></div>
+      <div id="empty-state">暂无采集记录。<br />在 BOSS 页面切换岗位后，这里会实时显示结果。</div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

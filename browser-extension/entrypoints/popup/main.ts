@@ -1,9 +1,13 @@
-const AUTO_COLLECT_ENABLED_KEY = 'autoCollectEnabled';
-const COLLECTED_JOB_COUNT_KEY = 'collectedJobCount';
+import {
+  AUTO_COLLECT_ENABLED_KEY,
+  COLLECTED_JOB_COUNT_KEY,
+} from '../shared/collectionState';
 
 const toggleEl = document.getElementById('auto-collect-toggle') as HTMLInputElement;
 const toggleStateEl = document.getElementById('toggle-state') as HTMLSpanElement;
 const countEl = document.getElementById('collected-count') as HTMLSpanElement;
+const openSidepanelEl = document.getElementById('open-sidepanel') as HTMLButtonElement;
+const openSidepanelErrorEl = document.getElementById('open-sidepanel-error') as HTMLDivElement;
 
 function renderToggle(enabled: boolean) {
   toggleEl.checked = enabled;
@@ -34,6 +38,20 @@ async function init() {
     const nextEnabled = toggleEl.checked;
     renderToggle(nextEnabled);
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: nextEnabled });
+  });
+
+  openSidepanelEl.addEventListener('click', async () => {
+    openSidepanelErrorEl.textContent = '';
+    try {
+      const currentWindow = await chrome.windows.getCurrent();
+      if (currentWindow.id === undefined) {
+        throw new Error('未能识别当前浏览器窗口');
+      }
+      await chrome.sidePanel.open({ windowId: currentWindow.id });
+      window.close();
+    } catch (error) {
+      openSidepanelErrorEl.textContent = error instanceof Error ? error.message : String(error);
+    }
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {

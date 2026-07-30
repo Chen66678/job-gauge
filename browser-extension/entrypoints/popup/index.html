@@ -94,6 +94,23 @@
         font-weight: 700;
         color: #06ae56;
       }
+      #open-sidepanel {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 12px;
+        background: #06ae56;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #open-sidepanel-error {
+        min-height: 16px;
+        margin-top: 6px;
+        color: #c62828;
+        font-size: 11px;
+      }
     </style>
   </head>
   <body>
@@ -115,6 +132,8 @@
       <div class="label">已采集职位</div>
       <span id="collected-count">0</span>
     </div>
+    <button id="open-sidepanel" type="button">打开常驻侧栏</button>
+    <div id="open-sidepanel-error" role="status"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

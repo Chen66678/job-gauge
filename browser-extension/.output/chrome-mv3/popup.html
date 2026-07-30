@@ -94,9 +94,27 @@
         font-weight: 700;
         color: #06ae56;
       }
+      #open-sidepanel {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 12px;
+        background: #06ae56;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #open-sidepanel-error {
+        min-height: 16px;
+        margin-top: 6px;
+        color: #c62828;
+        font-size: 11px;
+      }
     </style>
-    <script type="module" crossorigin src="/chunks/popup-xbXr2Mgw.js"></script>
+    <script type="module" crossorigin src="/chunks/popup-D82RQbFF.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/_virtual_wxt-html-plugins-Dezn_h7o.js">
+    <link rel="modulepreload" crossorigin href="/chunks/collectionState-E5SSeChc.js">
   </head>
   <body>
     <h1>BOSS JD Reader</h1>
@@ -117,5 +135,7 @@
       <div class="label">已采集职位</div>
       <span id="collected-count">0</span>
     </div>
+    <button id="open-sidepanel" type="button">打开常驻侧栏</button>
+    <div id="open-sidepanel-error" role="status"></div>
   </body>
 </html>
