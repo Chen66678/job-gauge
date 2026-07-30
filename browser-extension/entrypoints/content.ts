@@ -30,6 +30,7 @@ import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTED_JOB_COUNT_KEY,
   COLLECTED_JOB_IDS_KEY,
+  DETAIL_PANEL_STATUS_KEY,
   type CollectionRecord,
 } from './shared/collectionState';
 
@@ -37,7 +38,17 @@ type BackgroundResult = { ok: true } | { ok: false; error: string };
 
 const COLLECTED_MARKER_ATTRIBUTE = 'data-job-hq-collected-marker';
 const DETAIL_PANEL_SELECTOR = '.job-detail-container';
-const DETAIL_TITLE_SELECTOR = `${DETAIL_PANEL_SELECTOR} .job-name`;
+// Same degrade chain as extractTitle(): the two-column recommendation page
+// normally nests the title under .job-detail-container, but that wrapper
+// class is not load-bearing — if BOSS renames/restructures it, the title
+// element itself (found via any of these selectors) is what actually
+// anchors "is a job detail currently shown", not the wrapper.
+const TITLE_SELECTORS = [
+  '.job-detail-container .job-name',
+  '.job-title h1',
+  'h1.name',
+  '.job-name',
+];
 const AUTO_COLLECT_DEBOUNCE_MS = 250;
 
 let autoCollectEnabled = true;
@@ -61,12 +72,7 @@ function text(el: Element | null): string {
 }
 
 function extractTitle(): string {
-  return text(firstMatch([
-    '.job-detail-container .job-name',
-    '.job-title h1',
-    'h1.name',
-    '.job-name',
-  ]));
+  return text(firstMatch(TITLE_SELECTORS));
 }
 
 // BOSS Zhipin pads job descriptions with zero-size/hidden spans (each paired
@@ -384,10 +390,10 @@ function waitForStableDetail(): Promise<void> {
 
   return new Promise((resolve) => {
     const start = Date.now();
-    let previous = text(document.querySelector(DETAIL_TITLE_SELECTOR));
+    let previous = extractTitle();
 
     const tick = () => {
-      const current = text(document.querySelector(DETAIL_TITLE_SELECTOR));
+      const current = extractTitle();
       if (current === previous || Date.now() - start >= MAX_WAIT_MS) {
         resolve();
         return;
@@ -402,6 +408,12 @@ function waitForStableDetail(): Promise<void> {
 
 function getDetailPanel(): Element | null {
   return document.querySelector(DETAIL_PANEL_SELECTOR);
+}
+
+async function updateDetailPanelStatus(detected: boolean) {
+  await chrome.storage.local.set({
+    [DETAIL_PANEL_STATUS_KEY]: detected ? 'detected' : 'not-detected',
+  });
 }
 
 function markCurrentJobCollected() {
@@ -552,22 +564,6 @@ async function collectCurrentJob(): Promise<BackgroundResult> {
   }
 }
 
-function isCollectedMarkerNode(node: Node): boolean {
-  return node instanceof Element
-    && (node.hasAttribute(COLLECTED_MARKER_ATTRIBUTE)
-      || Boolean(node.querySelector(`[${COLLECTED_MARKER_ATTRIBUTE}]`)));
-}
-
-function isOnlyCollectedMarkerMutation(records: MutationRecord[]): boolean {
-  return records.length > 0 && records.every((record) => {
-    if (record.type !== 'childList') {
-      return false;
-    }
-    const changedNodes = [...Array.from(record.addedNodes), ...Array.from(record.removedNodes)];
-    return changedNodes.length > 0 && changedNodes.every(isCollectedMarkerNode);
-  });
-}
-
 function scheduleAutoCollect() {
   removeCollectedMarker();
   if (!autoCollectEnabled) {
@@ -583,36 +579,53 @@ function scheduleAutoCollect() {
   }, AUTO_COLLECT_DEBOUNCE_MS);
 }
 
+// Previously this attached a scoped MutationObserver only once
+// `.job-detail-container` existed, and did nothing at all otherwise — so if
+// that one wrapper class didn't match the live DOM, auto-collection never
+// ran a single time, regardless of how many times the user switched jobs.
+// The wrapper class is not load-bearing for "is a detail rendered right
+// now"; extractTitle()'s degrade chain already answers that.
+//
+// This observes document.body (the one ancestor guaranteed to exist,
+// unaffected by the panel wrapper being replaced wholesale on job switch)
+// and re-collects only when the extracted title text actually changes —
+// not on every raw mutation. That distinction matters: BOSS's page has
+// unrelated chat/notification widgets that can mutate far more often than
+// the 250ms debounce window, and triggering on raw mutations would keep
+// resetting that debounce forever, so auto-collect could stall
+// indefinitely on a busy page. Gating on title-text change also makes the
+// marker-only-mutation filter unnecessary: the marker is inserted as a
+// sibling of the title node, so it never alters the title's own text.
 function observeDetailPanel() {
-  let observedPanel: Element | null = null;
-  let detailObserver: MutationObserver | null = null;
+  let lastTitle = '';
+  let lastPanelDetected = false;
 
-  const attachToCurrentPanel = () => {
-    const panel = getDetailPanel();
-    if (!panel || panel === observedPanel) {
-      return;
+  const evaluate = () => {
+    const currentTitle = extractTitle();
+    const detected = currentTitle.length > 0;
+    if (detected !== lastPanelDetected) {
+      lastPanelDetected = detected;
+      void updateDetailPanelStatus(detected);
     }
 
-    detailObserver?.disconnect();
-    observedPanel = panel;
-    detailObserver = new MutationObserver((records) => {
-      if (!isOnlyCollectedMarkerMutation(records)) {
-        scheduleAutoCollect();
-      }
-    });
-    detailObserver.observe(panel, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ['href'],
-    });
-    scheduleAutoCollect();
+    if (currentTitle && currentTitle !== lastTitle) {
+      lastTitle = currentTitle;
+      scheduleAutoCollect();
+    } else if (!currentTitle) {
+      lastTitle = '';
+    }
   };
 
-  const pageObserver = new MutationObserver(attachToCurrentPanel);
-  pageObserver.observe(document.documentElement, { childList: true, subtree: true });
-  attachToCurrentPanel();
+  const observer = new MutationObserver(evaluate);
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['href'],
+  });
+
+  evaluate();
 }
 
 async function initializeAutoCollection() {

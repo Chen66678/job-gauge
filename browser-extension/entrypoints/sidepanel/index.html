@@ -107,6 +107,20 @@
         font-size: 24px;
         font-weight: 800;
       }
+      #panel-status {
+        margin-top: 10px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #panel-status.detected {
+        display: none;
+      }
+      #panel-status.not-detected {
+        color: #8a6100;
+        background: #fff6e0;
+      }
       main {
         padding: 14px 12px 20px;
       }
@@ -216,6 +230,7 @@
         <span class="label">已采集职位</span>
         <span id="collected-count">0</span>
       </div>
+      <div id="panel-status" role="status"></div>
     </header>
     <main>
       <div class="section-heading">

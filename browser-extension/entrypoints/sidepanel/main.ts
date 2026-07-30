@@ -2,6 +2,7 @@ import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTION_RECORDS_KEY,
   COLLECTED_JOB_COUNT_KEY,
+  DETAIL_PANEL_STATUS_KEY,
   parseCollectionRecords,
   type CollectionRecord,
 } from '../shared/collectionState';
@@ -11,6 +12,15 @@ const toggleStateEl = document.getElementById('toggle-state') as HTMLSpanElement
 const countEl = document.getElementById('collected-count') as HTMLSpanElement;
 const recordsEl = document.getElementById('records') as HTMLDivElement;
 const emptyStateEl = document.getElementById('empty-state') as HTMLDivElement;
+const panelStatusEl = document.getElementById('panel-status') as HTMLDivElement;
+
+function renderPanelStatus(value: unknown) {
+  const notDetected = value === 'not-detected';
+  panelStatusEl.className = notDetected ? 'not-detected' : 'detected';
+  panelStatusEl.textContent = notDetected
+    ? '当前页面未检测到岗位详情，请在左侧列表点选一个岗位'
+    : '';
+}
 
 function renderToggle(enabled: boolean) {
   toggleEl.checked = enabled;
@@ -81,11 +91,13 @@ async function init() {
     AUTO_COLLECT_ENABLED_KEY,
     COLLECTED_JOB_COUNT_KEY,
     COLLECTION_RECORDS_KEY,
+    DETAIL_PANEL_STATUS_KEY,
   ]);
   const enabled = stored[AUTO_COLLECT_ENABLED_KEY] !== false;
   renderToggle(enabled);
   renderCount(stored[COLLECTED_JOB_COUNT_KEY]);
   renderRecords(stored[COLLECTION_RECORDS_KEY]);
+  renderPanelStatus(stored[DETAIL_PANEL_STATUS_KEY]);
 
   if (stored[AUTO_COLLECT_ENABLED_KEY] === undefined) {
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: true });
@@ -109,6 +121,9 @@ async function init() {
     }
     if (changes[COLLECTION_RECORDS_KEY]) {
       renderRecords(changes[COLLECTION_RECORDS_KEY].newValue);
+    }
+    if (changes[DETAIL_PANEL_STATUS_KEY]) {
+      renderPanelStatus(changes[DETAIL_PANEL_STATUS_KEY].newValue);
     }
   });
 }

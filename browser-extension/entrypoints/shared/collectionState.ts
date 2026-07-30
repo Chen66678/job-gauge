@@ -2,6 +2,7 @@ export const AUTO_COLLECT_ENABLED_KEY = 'autoCollectEnabled';
 export const COLLECTED_JOB_IDS_KEY = 'collectedJobIds';
 export const COLLECTED_JOB_COUNT_KEY = 'collectedJobCount';
 export const COLLECTION_RECORDS_KEY = 'collectionRecords';
+export const DETAIL_PANEL_STATUS_KEY = 'detailPanelStatus';
 
 export type CollectionRecord = {
   attemptedAt: string;
