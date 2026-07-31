@@ -590,6 +590,94 @@ describe("coreApi", () => {
     expect(markdown).toContain("负责 React 组件开发。");
   });
 
+  it("renderResumeImage 原样传递有事实支撑的简历行", async () => {
+    const storage = new MemoryStorage();
+    const readyRecord: CoreJobRecord = {
+      job: {
+        id: "job-ready",
+        title: "前端工程师",
+        company: "样例科技",
+        city: "上海",
+        salaryK: [20, 30],
+        companyTags: ["SaaS"],
+        jdText: "要求 React 组件开发。",
+        requirements: [buildRequirement()],
+        risks: [],
+        reviewFlags: [],
+        pinned: false,
+        workAddress: null,
+        sourceUrl: null
+      },
+      evaluation: { vetoed: false, score: buildScoreResult() },
+      evaluationError: null,
+      followUps: [],
+      material: buildMaterial(),
+      updatedAt: new Date().toISOString()
+    };
+    storage.setItem(
+      CORE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+        factLibrary: [],
+        jobs: [readyRecord],
+        preferences: null
+      })
+    );
+    const renderer = vi.fn(async () => "data:image/png;base64,aW1hZ2U=");
+    const api = createCoreApi({ client: createClient(), storage, renderResumeImage: renderer });
+
+    const result = await api.renderResumeImage("job-ready");
+
+    expect(result).toBe("data:image/png;base64,aW1hZ2U=");
+    expect(renderer).toHaveBeenCalledWith({
+      resumeLines: [{ text: "负责 React 组件开发。", factIds: ["fact-1"] }]
+    });
+  });
+
+  it("renderResumeImage 在 factIds 不可追溯时拒绝调用渲染器", async () => {
+    const storage = new MemoryStorage();
+    const material = buildMaterial();
+    material.resumeLines = [{ text: "负责 React 组件开发。", factIds: ["fact-missing"] }];
+    const readyRecord: CoreJobRecord = {
+      job: {
+        id: "job-ready",
+        title: "前端工程师",
+        company: "样例科技",
+        city: "上海",
+        salaryK: [20, 30],
+        companyTags: ["SaaS"],
+        jdText: "要求 React 组件开发。",
+        requirements: [buildRequirement()],
+        risks: [],
+        reviewFlags: [],
+        pinned: false,
+        workAddress: null,
+        sourceUrl: null
+      },
+      evaluation: { vetoed: false, score: buildScoreResult() },
+      evaluationError: null,
+      followUps: [],
+      material,
+      updatedAt: new Date().toISOString()
+    };
+    storage.setItem(
+      CORE_STATE_STORAGE_KEY,
+      JSON.stringify({
+        schemaVersion: 1,
+        updatedAt: new Date().toISOString(),
+        factLibrary: [],
+        jobs: [readyRecord],
+        preferences: null
+      })
+    );
+    const renderer = vi.fn(async () => "data:image/png;base64,aW1hZ2U=");
+    const api = createCoreApi({ client: createClient(), storage, renderResumeImage: renderer });
+
+    await expect(api.renderResumeImage("job-ready")).rejects.toThrow("无法追溯的 factIds");
+    expect(renderer).not.toHaveBeenCalled();
+  });
+
   it("preScreenJob stores preScreenResult on the job record and persists it", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });

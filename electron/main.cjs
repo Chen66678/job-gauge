@@ -4,6 +4,8 @@ const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { createCoreApi } = require("../src/domain/coreApi.ts");
+const { buildResumeImageHtml } = require("../src/domain/resumeImage.ts");
+const { createResumeImageRenderer } = require("./resumeImageRenderer.cjs");
 const { createLlmClient } = require("../src/domain/llmClient.ts");
 const { CORE_STATE_STORAGE_KEY } = require("../src/domain/coreState.ts");
 const {
@@ -87,6 +89,8 @@ function createUnavailableLlmClient() {
   return { completeText: unavailable, completeVision: unavailable };
 }
 
+const renderResumeImage = createResumeImageRenderer(buildResumeImageHtml);
+
 function buildClientForKey(apiKey) {
   return apiKey ? createLlmClient({ apiKey }) : createUnavailableLlmClient();
 }
@@ -141,7 +145,7 @@ function createMainCoreApi() {
     fileIO: byokFileIO,
     getEnvApiKey: () => process.env.DASHSCOPE_API_KEY
   });
-  const deps = { client: buildClientForKey(initialActive.apiKey), storage };
+  const deps = { client: buildClientForKey(initialActive.apiKey), storage, renderResumeImage };
 
   const byokDeps = {
     safeStorage: byokSafeStorage,
@@ -229,6 +233,7 @@ function registerCoreApiHandlers(core) {
   invoke("reevaluateJob", (jobId) => core.api.reevaluateJob(jobId));
   invoke("draftMaterial", (jobId) => core.api.draftMaterial(jobId));
   invoke("exportResume", (jobId) => core.api.exportResume(jobId));
+  invoke("renderResumeImage", (jobId) => core.api.renderResumeImage(jobId));
   invoke("preScreenJob", (jobId, keywords) => core.api.preScreenJob(jobId, keywords));
   invoke("diagnoseBatch", () => core.api.diagnoseBatch(core.getClient()));
   invoke("clear", () => core.api.clear());
@@ -261,6 +266,18 @@ function sendJson(response, statusCode, body, origin) {
   response.end(JSON.stringify(body));
 }
 
+function sendPngDataUrl(response, dataUrl, origin) {
+  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) throw new Error("resume image renderer returned an invalid PNG data URL");
+  const png = Buffer.from(match[1], "base64");
+  if (isAllowedOrigin(origin)) response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Vary", "Origin");
+  response.setHeader("Content-Type", "image/png");
+  response.setHeader("Content-Length", String(png.length));
+  response.writeHead(200);
+  response.end(png);
+}
+
 function readJson(request) {
   return new Promise((resolve, reject) => {
     let body = "";
@@ -283,28 +300,38 @@ function readJson(request) {
   });
 }
 
-async function startJobApi(core, localApiToken) {
+async function startJobApi(core, localApiToken, candidatePorts = JOB_API_PORTS) {
   if (jobApiState.server) return jobApiState;
-  for (const port of JOB_API_PORTS) {
+  for (let port of candidatePorts) {
     const server = http.createServer(async (request, response) => {
       const origin = request.headers.origin;
       if (!isAllowedHost(request.headers.host, port)) return sendJson(response, 403, { error: "forbidden host" });
       if (origin && !isAllowedOrigin(origin)) return sendJson(response, 403, { error: "forbidden origin" });
-      if (request.method === "OPTIONS" && request.url === "/api/jobs") {
+      const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
+      const isJobsPath = requestUrl.pathname === "/api/jobs";
+      const isResumeImagePath = requestUrl.pathname === "/api/resume-image";
+      if (request.method === "OPTIONS" && (isJobsPath || isResumeImagePath)) {
         if (isAllowedOrigin(origin)) {
           response.setHeader("Access-Control-Allow-Origin", origin);
-          response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+          response.setHeader("Access-Control-Allow-Methods", isJobsPath ? "POST, OPTIONS" : "GET, OPTIONS");
           response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Radar-Token");
         }
         response.writeHead(204);
         return response.end();
       }
-      if (request.url !== "/api/jobs" || request.method !== "POST") return sendJson(response, 404, { error: "not found" }, origin);
+      const isJobsRequest = isJobsPath && request.method === "POST";
+      const isResumeImageRequest = isResumeImagePath && request.method === "GET";
+      if (!isJobsRequest && !isResumeImageRequest) return sendJson(response, 404, { error: "not found" }, origin);
       if (!isLoopbackAddress(request.socket.remoteAddress)) return sendJson(response, 403, { error: "forbidden" }, origin);
       // Host → Origin → 回环 → token，四道防线顺序不可颠倒；token 校验放在
       // 回环之后、readJson 之前，未过前三关或未带正确 token 都不会触碰请求体。
       if (request.headers["x-radar-token"] !== localApiToken) return sendJson(response, 403, { error: "forbidden" }, origin);
       try {
+        if (isResumeImageRequest) {
+          const jobId = requestUrl.searchParams.get("jobId");
+          if (!jobId) return sendJson(response, 400, { error: "jobId is required" }, origin);
+          return sendPngDataUrl(response, await core.api.renderResumeImage(jobId), origin);
+        }
         const input = await readJson(request);
         if (!input || typeof input !== "object" || typeof input.title !== "string" || typeof input.company !== "string" || typeof input.description !== "string") {
           return sendJson(response, 400, { error: "title, company, and description are required" }, origin);
@@ -339,6 +366,7 @@ async function startJobApi(core, localApiToken) {
         server.once("listening", onListening);
         server.listen(port, LOCAL_HOST_BIND_ADDRESS);
       });
+      port = server.address().port;
       jobApiState.server = server;
       jobApiState.port = port;
       jobApiState.url = `http://${LOCAL_HOST_BIND_ADDRESS}:${port}`;

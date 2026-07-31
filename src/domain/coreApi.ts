@@ -17,6 +17,7 @@ import {
 } from "./coreState";
 import type { FollowUpQuestion } from "./followUp";
 import { exportToMarkdown } from "./exportResume";
+import { buildResumeImageRenderInput, type ResumeImageRenderInput } from "./resumeImage";
 import { preScreenJob as runKeywordPreScreen, type KeywordPreScreenResult } from "./jobPreScreen";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import {
@@ -82,6 +83,7 @@ export interface CoreApi {
   reevaluateJob(jobId: string): Promise<CoreJobRecord | null>;
   draftMaterial(jobId: string): Promise<MaterialPreview>;
   exportResume(jobId: string): string;
+  renderResumeImage(jobId: string): Promise<string>;
   preScreenJob(jobId: string, keywords: string[]): KeywordPreScreenResult | null;
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
   clearFactLibrary(): void;
@@ -89,7 +91,11 @@ export interface CoreApi {
   clear(): void;
 }
 
-export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage: LocalStorageLike }): CoreApi {
+export function createCoreApi(deps: {
+  client: OpenAiCompatibleLlmClient;
+  storage: LocalStorageLike;
+  renderResumeImage?: (input: ResumeImageRenderInput) => Promise<string>;
+}): CoreApi {
   let state = loadCoreState(deps.storage);
 
   function persist(nextState: CoreState): CoreState {
@@ -454,6 +460,17 @@ export function createCoreApi(deps: { client: OpenAiCompatibleLlmClient; storage
         return "";
       }
       return exportToMarkdown(record.material, record.job.title, record.job.company);
+    },
+
+    async renderResumeImage(jobId) {
+      const record = getJobRecord(state, jobId);
+      if (!record?.material) {
+        throw new Error("岗位尚未生成定制材料，无法渲染图片。");
+      }
+      if (!deps.renderResumeImage) {
+        throw new Error("当前运行环境不支持简历图片渲染。");
+      }
+      return deps.renderResumeImage(buildResumeImageRenderInput(record.material));
     },
 
     preScreenJob(jobId, keywords) {

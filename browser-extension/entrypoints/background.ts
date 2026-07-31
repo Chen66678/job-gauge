@@ -1,6 +1,6 @@
 // Background service worker.
 //
-// Sole network egress point for this extension: only ever POSTs to
+// Sole network egress point for this extension: only ever sends requests to
 // 127.0.0.1 on one of the candidate ports below. No other network calls are
 // made anywhere in this extension.
 
@@ -51,6 +51,36 @@ async function postToLocalApp(payload: JdPayload): Promise<PostResult> {
   }
 
   return { ok: false, error: lastError };
+}
+
+export async function fetchResumeImage(jobId: string): Promise<Blob> {
+  let lastError = '未能连接到本地应用';
+  const token = await getStoredToken();
+  if (!token) {
+    throw new Error('未配置本地应用配对 token，请在插件「选项」中粘贴 token');
+  }
+
+  for (const port of CANDIDATE_PORTS) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/resume-image?jobId=${encodeURIComponent(jobId)}`, {
+        method: 'GET',
+        headers: { 'X-Radar-Token': token },
+      });
+
+      if (!response.ok) {
+        lastError = response.status === 403
+          ? `端口 ${port} 拒绝访问，请检查 token 是否配置正确`
+          : `端口 ${port} 返回 HTTP ${response.status}`;
+        continue;
+      }
+
+      return await response.blob();
+    } catch (err) {
+      lastError = `端口 ${port} 连接失败: ${err instanceof Error ? err.message : String(err)}`;
+    }
+  }
+
+  throw new Error(lastError);
 }
 
 export default defineBackground(() => {

@@ -106,6 +106,7 @@ declare global {
       getByokKeyStatus: () => Promise<{ configured: boolean; source: 'keychain' | 'environment' | 'none' }>
       clearByokKey: () => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
       getLocalApiToken: () => Promise<{ token: string }>
+      renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
     }
   }
 }
@@ -337,7 +338,7 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
           <span>{job.salary}</span>
           {job.workAddress && <span>{job.workAddress}</span>}
           {job.sourceUrl ? (
-            <a className="meta-link" href={job.sourceUrl} target="_blank" rel="noreferrer">查看原岗位 ↗</a>
+            <a className="meta-link" href={`${job.sourceUrl}${job.sourceUrl.includes('?') ? '&' : '?'}jobId=${encodeURIComponent(job.id)}`} target="_blank" rel="noreferrer">查看原岗位 ↗</a>
           ) : (
             <span className="meta-link disabled" title="当前岗位没有保存来源链接">原岗位链接未保存</span>
           )}

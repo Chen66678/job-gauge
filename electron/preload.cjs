@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("coreApi", {
   reevaluateJob: (jobId) => invokeCoreApi("reevaluateJob", jobId),
   draftMaterial: (jobId) => invokeCoreApi("draftMaterial", jobId),
   exportResume: (jobId) => invokeCoreApi("exportResume", jobId),
+  renderResumeImage: (jobId) => invokeCoreApi("renderResumeImage", jobId),
   preScreenJob: (jobId, keywords) => invokeCoreApi("preScreenJob", jobId, keywords),
   diagnoseBatch: () => invokeCoreApi("diagnoseBatch"),
   clear: () => invokeCoreApi("clear"),
