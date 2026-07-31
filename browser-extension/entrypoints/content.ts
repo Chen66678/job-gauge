@@ -531,11 +531,17 @@ async function collectCurrentJob(): Promise<BackgroundResult> {
     }
 
     if (collectedJobIds.has(jobId)) {
+      // Re-viewing an already-collected job is not a new collection event —
+      // it still counts toward "distinct jobs seen this round" and still
+      // gets the on-page marker, but must NOT push a fresh entry onto the
+      // "最近抓取" log. That log is a record of collection attempts; without
+      // this branch, switching back and forth between already-seen jobs
+      // (A→B→C→A→D→A...) reorders the same entry to the top of the list on
+      // every revisit, making it look like the job was re-collected each
+      // time.
+      await incrementSessionCollectedCount(jobId);
       markCurrentJobCollected();
-      return recordCollectionResult(
-        { ok: true },
-        { title, jobId, jobIdSource },
-      );
+      return { ok: true };
     }
 
     const result = (await chrome.runtime.sendMessage({
@@ -545,7 +551,7 @@ async function collectCurrentJob(): Promise<BackgroundResult> {
 
     if (result.ok) {
       await rememberCollectedJob(jobId);
-      await incrementSessionCollectedCount();
+      await incrementSessionCollectedCount(jobId);
       markCurrentJobCollected();
     }
 
