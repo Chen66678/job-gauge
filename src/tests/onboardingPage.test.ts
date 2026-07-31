@@ -49,6 +49,21 @@ async function advanceToStep2() {
 }
 
 describe('OnboardingPage resume step', () => {
+  it('renders the five-step progress without the removed fact-confirmation step', () => {
+    buildApi()
+
+    render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
+
+    const progress = screen.getByRole('banner', { name: '安装引导进度' })
+    expect(progress.querySelectorAll('.progress-step')).toHaveLength(5)
+    expect(progress.textContent).toContain('配 Key')
+    expect(progress.textContent).toContain('传简历')
+    expect(progress.textContent).toContain('设偏好')
+    expect(progress.textContent).toContain('装插件')
+    expect(progress.textContent).toContain('导入岗位')
+    expect(progress.textContent).not.toContain('确认事实')
+  })
+
   it('does not echo extracted PDF text after selecting a file', async () => {
     buildApi()
     isPdfFile.mockReturnValue(true)
@@ -147,13 +162,14 @@ describe('OnboardingPage job import step', () => {
     await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.txt')
     fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
     await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({ kind: 'text', resumeText: '张三' }))
-    await screen.findByRole('button', { name: '下一步：确认事实 →' }, { timeout: 3000 })
-    fireEvent.click(screen.getByRole('button', { name: '下一步：确认事实 →' }))
-    fireEvent.click(screen.getByRole('button', { name: '继续下一步' }))
+    await screen.findByRole('button', { name: '下一步：设置偏好 →' }, { timeout: 3000 })
+    fireEvent.click(screen.getByRole('button', { name: '下一步：设置偏好 →' }))
     fireEvent.click(screen.getByRole('button', { name: '跳过，使用默认' }))
-    fireEvent.click(screen.getByRole('button', { name: '安装插件' }))
-    fireEvent.click(screen.getByRole('button', { name: '去启用' }))
-    fireEvent.click(screen.getByRole('button', { name: '我已点击插件授权' }))
+    await screen.findByRole('heading', { name: '安装浏览器插件', level: 1 })
+    expect(screen.getByText('当前请在浏览器扩展管理页打开开发者模式并加载插件；后续会在这里提供商店链接。')).not.toBeNull()
+    expect(screen.getByText('回到应用的「设置」，从只读 token 框复制 token。')).not.toBeNull()
+    expect(screen.queryByText(/自动检测|授权|预览发送失败/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '下一步：导入岗位 →' }))
     await screen.findByRole('heading', { name: '导入第一个岗位', level: 1 }, { timeout: 3000 })
     await waitFor(() => expect(api.onStateChanged).toHaveBeenCalledOnce())
 

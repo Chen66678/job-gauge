@@ -1,20 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CoreState } from './domain/coreState'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
-import type { FactStatus, ProfileFact } from './types'
 import type { WorkflowApi } from './workflowApi'
 import { unwrap, errorText } from './coreApiResult'
 import './OnboardingPage.css'
 
 type ResumeInput = { kind: 'text'; resumeText: string }
-type Step = 1 | 2 | 3 | 4 | 5 | 6
+type Step = 1 | 2 | 3 | 4 | 5
 type KeyStatus = 'empty' | 'checking' | 'success' | 'failure'
 type ParseStatus = 'idle' | 'parsing' | 'success' | 'failure'
 type PreferenceStatus = 'idle' | 'saving' | 'success' | 'failure'
-type PluginStatus = 'missing' | 'disabled' | 'unauthorized' | 'ready' | 'send_failed'
 
 const ONBOARDING_COMPLETE_KEY = 'onboardingCompleted'
-const STEPS = ['配 Key', '传简历', '确认事实', '设偏好', '检查插件', '导入岗位']
+const STEPS = ['配 Key', '传简历', '设偏好', '装插件', '导入岗位']
 
 export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished: () => void; onOpenJobs: () => void }) {
   const api = window.coreApi as unknown as WorkflowApi
@@ -31,7 +29,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const [salary, setSalary] = useState('')
   const [exclude, setExclude] = useState('')
   const [preferenceStatus, setPreferenceStatus] = useState<PreferenceStatus>('idle')
-  const [pluginStatus, setPluginStatus] = useState<PluginStatus>('missing')
   const [jobStatus, setJobStatus] = useState<'waiting' | 'evaluating' | 'success' | 'failure'>('waiting')
   const [error, setError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -44,12 +41,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     return () => window.clearTimeout(timer)
   }, [keyStatus])
   useEffect(() => {
-    if (pluginStatus !== 'ready') return
-    const timer = window.setTimeout(() => setStep(6), 500)
-    return () => window.clearTimeout(timer)
-  }, [pluginStatus])
-  useEffect(() => {
-    if (step !== 6) return
+    if (step !== 5) return
     const baselineJobCount = state?.jobs.length ?? 0
     setJobStatus('waiting')
     const unsubscribe = api.onStateChanged(nextState => {
@@ -62,7 +54,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const stepClass = (index: number) => {
     if (index + 1 === step) return 'step-current'
     if (index + 1 > step) return 'step-todo'
-    const skipped = (index === 2 && step > 3 && state?.factLibrary.some(fact => fact.status === 'unconfirmed')) || (index === 3 && step > 4 && preferenceStatus !== 'success')
+    const skipped = index === 2 && step > 3 && preferenceStatus !== 'success'
     return skipped ? 'step-skip' : 'step-done'
   }
 
@@ -100,10 +92,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     } catch (reason) { setError(errorText(reason)); setParseStatus('failure') }
   }
 
-  const setFactStatus = async (factId: string, status: FactStatus) => {
-    try { unwrap(await api.setFactStatus(factId, status)); await refresh() } catch (reason) { setError(errorText(reason)) }
-  }
-
   const savePreferences = async () => {
     setPreferenceStatus('saving'); setError(null)
     try {
@@ -116,7 +104,6 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   }
 
   const finish = () => { localStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true'); onFinished(); onOpenJobs() }
-  const unconfirmed = (state?.factLibrary ?? []).filter(fact => fact.status === 'unconfirmed')
   const preferences = state?.preferences?.ruleSet
 
   return <div className="onboarding-page">
@@ -137,7 +124,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
       </>}
       {step === 2 && <>
         <h1 className="step-card-title">上传简历</h1><p className="step-card-desc">仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>
-        {parseStatus === 'success' ? <><div className="status-row">✓ 解析成功，提取到 {parseCount} 条事实</div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(3)}>下一步：确认事实 →</button></div></> : <>
+        {parseStatus === 'success' ? <><div className="status-row">✓ 解析成功，提取到 {parseCount} 条事实</div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(3)}>下一步：设置偏好 →</button></div></> : <>
           <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF 或 TXT 简历到此处<br />或点击选择文件</button>
           <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt" onChange={event => void fileSelected(event.target.files?.[0])} />
           {selectedFileName && <p className="status-row">✓ 已选择文件：{selectedFileName}</p>}
@@ -146,20 +133,16 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
         </>}
       </>}
       {step === 3 && <>
-        <h1 className="step-card-title">确认事实</h1><p className="step-card-desc">只确认简历解析出的信息，之后可在“我的资料”继续维护。</p>
-        {unconfirmed.length ? <><div className="fact-list">{unconfirmed.map((fact: ProfileFact) => <div className="wizard-fact" key={fact.id}><div><b>{fact.label}</b><span>{fact.value}</span></div><div><button onClick={() => void setFactStatus(fact.id, 'confirmed')}>✓</button><button onClick={() => void setFactStatus(fact.id, 'rejected')}>✕</button></div></div>)}</div><button className="text-button centered" onClick={() => setStep(4)}>跳过，稍后在我的资料确认</button></> : <><div className="status-row">✓ 已确认 {(state?.factLibrary ?? []).filter(fact => fact.status === 'confirmed').length} 条</div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(4)}>继续下一步</button></div></>}
-      </>}
-      {step === 4 && <>
         <h1 className="step-card-title">设置偏好</h1><p className="step-card-desc">用自然语言偏好生成后续岗位评估的筛选规则。</p>
-        {preferenceStatus === 'success' ? <><div className="preference-preview"><PreferenceChips preferences={preferences} /></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(5)}>下一步：检查插件 →</button></div></> : <>
+        {preferenceStatus === 'success' ? <><div className="preference-preview"><PreferenceChips preferences={preferences} /></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={() => setStep(4)}>下一步：安装插件 →</button></div></> : <>
           <div className="pref-cols"><input className="wizard-input" placeholder="例：北京或上海" value={city} onChange={event => setCity(event.target.value)} /><input className="wizard-input" placeholder="例：底薪不低于 15K" value={salary} onChange={event => setSalary(event.target.value)} /></div>
           <input className="wizard-input" placeholder="例：不要外包、驻场、大小周" value={exclude} onChange={event => setExclude(event.target.value)} />
           <p className="default-hint">留空将使用默认值：不限城市、不限薪资、无排除项。</p>{preferenceStatus === 'saving' && <p className="inline-loading"><span className="spinner" />正在解析并保存偏好…</p>}
-          <div className="step-card-footer"><button className="text-button" onClick={() => setStep(5)}>跳过，使用默认</button><button className="primary-button" disabled={preferenceStatus === 'saving'} onClick={() => void savePreferences()}>{preferenceStatus === 'saving' ? '解析中…' : preferenceStatus === 'failure' ? '重试' : '填写 → 解析并保存'}</button></div>
+          <div className="step-card-footer"><button className="text-button" onClick={() => setStep(4)}>跳过，使用默认</button><button className="primary-button" disabled={preferenceStatus === 'saving'} onClick={() => void savePreferences()}>{preferenceStatus === 'saving' ? '解析中…' : preferenceStatus === 'failure' ? '重试' : '填写 → 解析并保存'}</button></div>
         </>}
       </>}
-      {step === 5 && <PluginStep status={pluginStatus} onAdvance={() => setPluginStatus(current => current === 'missing' ? 'disabled' : current === 'disabled' ? 'unauthorized' : 'ready')} onPreviewSendFailure={() => setPluginStatus('send_failed')} />}
-      {step === 6 && <>
+      {step === 4 && <PluginStep onAdvance={() => setStep(5)} />}
+      {step === 5 && <>
         <h1 className="step-card-title">导入第一个岗位</h1>{jobStatus === 'success' ? <><div className="graduation">🎉<h2>第一个岗位已评估完成！</h2><p>你已完成全部安装引导，现在可以在岗位列表中查看评估详情，并继续导入更多岗位。</p></div><div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={finish}>进入岗位列表</button></div></> : <><div className="job-flow"><span>🌐 在 BOSS 打开岗位</span><span>🧩 点击插件图标</span><span>⏳ 等待评估结果</span></div><p className="inline-loading"><span className="spinner" />等待插件发送岗位数据…</p></>}
       </>}
     </div></section>
@@ -174,8 +157,17 @@ function PreferenceChips({ preferences }: { preferences: CoreState['preferences'
   return <>{groups.map(([label, entries, kind]) => entries.length ? <div className="pref-group" key={label}><b>{label}</b><div>{entries.map(entry => <span className={`pref-chip ${kind}`} key={entry}>{entry}</span>)}</div></div> : null)}</>
 }
 
-function PluginStep({ status, onAdvance, onPreviewSendFailure }: { status: PluginStatus; onAdvance: () => void; onPreviewSendFailure: () => void }) {
-  if (status === 'send_failed') return <><h1 className="step-card-title">检查插件</h1><div className="plugin-icon-box plugin-failed">!</div><h2 className="plugin-title">岗位发送失败：本地应用未响应（连接超时）</h2><p className="step-card-desc centered">刷新 BOSS 页后重试，确认本地应用仍在运行。</p><div className="step-card-footer"><button className="text-button" onClick={onAdvance}>刷新 BOSS 页后重试</button><button className="primary-button" onClick={onAdvance}>重试</button></div></>
-  const content = status === 'missing' ? ['请先安装浏览器插件', '安装完成后将自动检测并继续', '安装插件'] : status === 'disabled' ? ['插件已安装，请启用', '插件当前处于停用状态，启用后将自动继续', '去启用'] : status === 'unauthorized' ? ['需要授权插件连接本地应用', '① 点击插件图标 → ② 点弹窗中的「授权连接」', '我已点击插件授权'] : ['✓ 插件已就绪', '即将进入最后一步：导入岗位', '']
-  return <><h1 className="step-card-title">检查插件</h1><p className="plugin-polling-note">系统每 2 秒自动检测插件状态</p><div className={`plugin-icon-box ${status === 'ready' ? 'done' : ''}`}>{status === 'unauthorized' ? '🧩 → ✓' : '🧩'}</div><h2 className="plugin-title">{content[0]}</h2><p className="step-card-desc centered">{content[1]}</p>{status === 'unauthorized' && <div className="plugin-auth-hint">① 点击浏览器工具栏的插件图标<br />② 在弹窗中选择「授权连接」</div>}{status !== 'ready' && <div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={onAdvance}>{content[2]}</button></div>}{status === 'ready' && <button className="plugin-preview-button" type="button" onClick={onPreviewSendFailure}>预览发送失败态</button>}</>
+function PluginStep({ onAdvance }: { onAdvance: () => void }) {
+  return <>
+    <h1 className="step-card-title">安装浏览器插件</h1>
+    <p className="step-card-desc">导入岗位需要浏览器插件把当前岗位信息发送到本地应用。</p>
+    <div className="plugin-icon-box">🧩</div>
+    <ol className="plugin-setup-list">
+      <li><b>安装插件</b><span>当前请在浏览器扩展管理页打开开发者模式并加载插件；后续会在这里提供商店链接。</span></li>
+      <li><b>打开插件</b><span>安装完成后，点击浏览器右上角工具栏中的插件图标。</span></li>
+      <li><b>复制 token</b><span>回到应用的「设置」，从只读 token 框复制 token。</span></li>
+      <li><b>粘贴连接</b><span>把 token 粘贴到插件中，按插件内提示完成连接。</span></li>
+    </ol>
+    <div className="step-card-footer step-card-footer-single"><button className="primary-button" onClick={onAdvance}>下一步：导入岗位 →</button></div>
+  </>
 }
