@@ -2,6 +2,7 @@ import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTION_RECORDS_KEY,
   DETAIL_PANEL_STATUS_KEY,
+  COLLECTED_JOB_IDS_KEY,
   parseCollectionRecords,
   resetSessionCollectedCount,
   SESSION_COLLECTED_JOB_COUNT_KEY,
@@ -14,6 +15,43 @@ const countEl = document.getElementById('collected-count') as HTMLSpanElement;
 const recordsEl = document.getElementById('records') as HTMLDivElement;
 const emptyStateEl = document.getElementById('empty-state') as HTMLDivElement;
 const panelStatusEl = document.getElementById('panel-status') as HTMLDivElement;
+const copyButtonEl = document.getElementById('copy-image-button') as HTMLButtonElement;
+const copyStatusEl = document.getElementById('copy-image-status') as HTMLDivElement;
+
+type CopyImageStatus = 'idle' | 'loading' | 'success' | 'failure';
+type ResumeImageRequest = { type: 'RESUME_IMAGE_REQUESTED'; jobId: string };
+type ResumeImageResponse =
+  | { ok: true; mimeType: string; dataBase64: string }
+  | { ok: false; error: string };
+
+function renderCopyImageStatus(status: CopyImageStatus, message = '') {
+  copyStatusEl.className = status;
+  if (status === 'idle') {
+    copyStatusEl.textContent = '点击按钮后可将简历图片复制到剪贴板';
+  } else if (status === 'loading') {
+    copyStatusEl.textContent = '正在获取简历图片并写入剪贴板…';
+  } else if (status === 'success') {
+    copyStatusEl.textContent = '已复制简历图片到剪贴板，可直接粘贴验证';
+  } else {
+    copyStatusEl.textContent = message || '复制失败，请检查网络、token 或剪贴板权限';
+  }
+}
+
+async function resolveCurrentJobId(): Promise<string | null> {
+  const stored = await chrome.storage.local.get([COLLECTION_RECORDS_KEY, COLLECTED_JOB_IDS_KEY]);
+  const records = parseCollectionRecords(stored[COLLECTION_RECORDS_KEY]);
+  for (const record of records) {
+    if (typeof record.jobId === 'string' && record.jobId.trim()) {
+      return record.jobId.trim();
+    }
+  }
+  const ids = stored[COLLECTED_JOB_IDS_KEY];
+  if (Array.isArray(ids)) {
+    const last = [...ids].reverse().find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return last?.trim() ?? null;
+  }
+  return null;
+}
 
 // Three real states, not two: 'detected', 'not-detected', and undefined
 // (content script hasn't reported anything yet — e.g. just injected and
@@ -108,6 +146,7 @@ async function init() {
   renderToggle(enabled);
   renderRecords(stored[COLLECTION_RECORDS_KEY]);
   renderPanelStatus(stored[DETAIL_PANEL_STATUS_KEY]);
+  renderCopyImageStatus('idle');
 
   if (stored[AUTO_COLLECT_ENABLED_KEY] === undefined) {
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: true });
@@ -123,6 +162,40 @@ async function init() {
     const nextEnabled = toggleEl.checked;
     renderToggle(nextEnabled);
     await chrome.storage.local.set({ [AUTO_COLLECT_ENABLED_KEY]: nextEnabled });
+  });
+
+  copyButtonEl.addEventListener('click', async () => {
+    const jobId = await resolveCurrentJobId();
+    if (!jobId) {
+      renderCopyImageStatus('failure', '未获取到 jobId，无法复制图片');
+      return;
+    }
+    copyButtonEl.disabled = true;
+    renderCopyImageStatus('loading');
+    try {
+      const response = await chrome.runtime.sendMessage<ResumeImageRequest, ResumeImageResponse>({
+        type: 'RESUME_IMAGE_REQUESTED',
+        jobId,
+      });
+      if (!response || !response.ok) {
+        throw new Error(response?.error || '未能获取简历图片');
+      }
+      const binary = atob(response.dataBase64);
+      const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      const blob = new Blob([bytes], { type: response.mimeType || 'image/png' });
+      if (typeof ClipboardItem === 'undefined') {
+        throw new Error('当前环境不支持 ClipboardItem');
+      }
+      await navigator.clipboard.write([
+        new ClipboardItem({ [blob.type || 'image/png']: blob }),
+      ]);
+      renderCopyImageStatus('success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      renderCopyImageStatus('failure', `复制失败：${message}`);
+    } finally {
+      copyButtonEl.disabled = false;
+    }
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {

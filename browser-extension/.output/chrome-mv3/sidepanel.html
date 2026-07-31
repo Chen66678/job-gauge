@@ -125,6 +125,51 @@
         color: #6b7280;
         background: #f1f2f4;
       }
+      .copy-card {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        background: #fff;
+      }
+      .copy-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      #copy-image-button {
+        flex: none;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 12px;
+        background: #06ae56;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      #copy-image-button:disabled {
+        cursor: wait;
+        opacity: 0.7;
+      }
+      #copy-image-status {
+        margin-top: 8px;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      #copy-image-status.idle {
+        color: #6b7280;
+      }
+      #copy-image-status.loading {
+        color: #8a6100;
+      }
+      #copy-image-status.success {
+        color: #078842;
+      }
+      #copy-image-status.failure {
+        color: #b42318;
+      }
       main {
         padding: 14px 12px 20px;
       }
@@ -213,9 +258,9 @@
         line-height: 1.6;
       }
     </style>
-    <script type="module" crossorigin src="/chunks/sidepanel-B1JlXE5e.js"></script>
+    <script type="module" crossorigin src="/chunks/sidepanel-Bef4iyh_.js"></script>
     <link rel="modulepreload" crossorigin href="/chunks/_virtual_wxt-html-plugins-Dezn_h7o.js">
-    <link rel="modulepreload" crossorigin href="/chunks/collectionState-CVVcxKK0.js">
+    <link rel="modulepreload" crossorigin href="/chunks/collectionState-0ojaf8rD.js">
   </head>
   <body>
     <header>
@@ -238,6 +283,16 @@
         <span id="collected-count">0</span>
       </div>
       <div id="panel-status" role="status"></div>
+      <div class="copy-card">
+        <div class="copy-row">
+          <div>
+            <div class="label">复制图片</div>
+            <div class="hint">把当前岗位的简历图片写入系统剪贴板</div>
+          </div>
+          <button id="copy-image-button" type="button">复制图片</button>
+        </div>
+        <div id="copy-image-status" role="status"></div>
+      </div>
     </header>
     <main>
       <div class="section-heading">

@@ -11,6 +11,10 @@ const CANDIDATE_PORTS = [8765, 8766, 8767];
 
 type JdExtractedMessage = { type: 'JD_EXTRACTED'; payload: JdPayload };
 type PostResult = { ok: true } | { ok: false; error: string };
+type ResumeImageRequestedMessage = { type: 'RESUME_IMAGE_REQUESTED'; jobId: string };
+type ResumeImageResult =
+  | { ok: true; mimeType: string; dataBase64: string }
+  | { ok: false; error: string };
 
 async function getStoredToken(): Promise<string> {
   const stored = await chrome.storage.local.get(LOCAL_API_TOKEN_STORAGE_KEY);
@@ -83,15 +87,43 @@ export async function fetchResumeImage(jobId: string): Promise<Blob> {
   throw new Error(lastError);
 }
 
+async function serializeBlob(blob: Blob): Promise<{ mimeType: string; dataBase64: string }> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return {
+    mimeType: blob.type || 'image/png',
+    dataBase64: btoa(binary),
+  };
+}
+
 export default defineBackground(() => {
   chrome.runtime.onMessage.addListener(
-    (message: JdExtractedMessage, _sender, sendResponse: (response: PostResult) => void) => {
-      if (message?.type !== 'JD_EXTRACTED') {
-        return undefined;
+    (
+      message: JdExtractedMessage | ResumeImageRequestedMessage,
+      _sender,
+      sendResponse: (response: PostResult | ResumeImageResult) => void,
+    ) => {
+      if (message?.type === 'JD_EXTRACTED') {
+        postToLocalApp(message.payload).then(sendResponse);
+        return true;
       }
 
-      postToLocalApp(message.payload).then(sendResponse);
-      return true;
+      if (message?.type === 'RESUME_IMAGE_REQUESTED') {
+        fetchResumeImage(message.jobId)
+          .then(serializeBlob)
+          .then((result) => sendResponse({ ok: true, ...result }))
+          .catch((error) => sendResponse({
+            ok: false,
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        return true;
+      }
+
+      return undefined;
     },
   );
 });
