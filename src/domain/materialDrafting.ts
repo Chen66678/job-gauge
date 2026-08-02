@@ -15,26 +15,20 @@ interface MaterialDraftLine {
 
 const MATERIAL_DRAFTING_SYSTEM_PROMPT = [
   "You draft tailored application materials from confirmed facts and return json.",
-  "You may only reorganize or restate the provided confirmed facts to better fit the job.",
-  "Do not invent any experience, skill, project, metric, duration, employer, tool, or company.",
+  "Do not copy resume-fact text verbatim. Rewrite each confirmed fact into a polished, professional resume line: reorganize it using STAR (situation/task, action, result) where the fact supports that structure, lead with the outcome or impact when the fact contains one, and combine facts that belong to the same larger accomplishment into one coherent line. Writing a resume fuller and more polished than the literal fact text is the normal, expected way to write a resume — do this by default.",
+  "Judge every line by this test: can it be reasonably inferred from the confirmed fact(s) it cites? If yes, write it, even if it reads stronger than the fact's literal wording. If no supporting fact exists for it, do not write it.",
+  "Three things you may do: (1) name the underlying capability a concrete fact demonstrates, using professional or industry terminology, even if the fact's own words do not contain that terminology; (2) make explicit the routine work a stated role necessarily implies, but only when that work is a necessary consequence of the fact, not merely something that could plausibly also be true; (3) combine multiple related facts into one plausible combined-capability statement, as long as every component of that statement is supported by the cited facts.",
+  "Do not invent any experience, skill, project, metric, duration, employer, tool, or collaborator that is not in the cited facts.",
+  "Never state or imply a broader scope than the facts support (one component of a thing becoming 'the entire system' or 'full end-to-end ownership'); never elevate a role beyond what the facts support (participated in / helped with becoming 'led' or 'architected'; did once becoming 'expert in' or 'senior'); never add an activity, collaborator, tool, employer, metric, or duration the cited facts do not contain; never stack several intensifiers in one line so the combined impression is stronger than any cited fact supports; never drop a real qualifier (e.g. 'course project', 'prototype', 'with a team', 'offline experiment') if removing it would imply a stronger claim than the fact supports.",
+  "There is no banned-word list. The same word can be true for one candidate and false for another — judge each line by whether the cited facts support that level of strength, not by which words are used.",
   "Every resume line must be traceable to the provided confirmed fact ids only.",
   "factIds may only reference the exact confirmed fact ids provided in the input.",
   "If a job requirement lacks confirmed fact support, do not write content for it.",
-  "Preserve the original language of the confirmed facts in every resumeLines text value. Do not translate any value into another language, even if it would read more naturally. If the confirmed facts are in Chinese, every resumeLines text must remain in Chinese exactly as written.",
+  "Preserve the original language of the confirmed facts: if the confirmed facts are written in Chinese, write every resumeLines text in Chinese; if they are written in another language, write in that language. Do not translate into a different language. This constrains language choice only, not wording — you are still expected to rephrase, restructure, and strengthen wording within that language exactly as instructed above.",
   "The greeting must be short, in Chinese, and based only on real confirmed match points.",
-  "Do not exaggerate or claim unsupported ability.",
-  "Do not amplify the strength of any claim beyond what the fact states: 'did once' must not become 'expert in' or 'proficient in'; 'participated in' must not become 'led' or 'architected'; 'small-scale' must not become 'enterprise-scale'; never add metrics, durations, or numbers the fact does not contain.",
-  "Preserve real qualifiers from the fact (e.g. 'course project', 'with a team', 'prototype', 'offline experiment') — do not drop them to imply stronger professional experience than the fact supports.",
-  "If a line cannot be phrased faithfully without amplification, omit that line rather than soften it into a technically-true-but-misleading phrasing.",
   'Return json with exactly this shape: {"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
   "Do not return markdown. Do not return prose. Return json only."
 ].join("\n");
-
-// 0.1 粗粒度兜底，0.3 内容评测域接管精确检测：只拦截最明显的程度和角色放大词。
-const AMPLIFICATION_PATTERNS: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /精通|资深|专家级|expert in|proficient in/i, label: "程度放大词" },
-  { pattern: /主导|负责架构|架构设计|led|architected/i, label: "角色放大词（若 fact 仅为参与/协助）" }
-];
 
 export async function draftApplicationMaterial(input: {
   profile: UserProfile;
@@ -79,16 +73,6 @@ export async function draftApplicationMaterial(input: {
     const text = line.text.trim();
     const factIds = unique(line.factIds.filter((factId) => confirmedFactById.has(factId)));
     if (!text || factIds.length === 0) {
-      droppedLineCount += 1;
-      return [];
-    }
-    const facts = factIds
-      .map((factId) => confirmedFactById.get(factId))
-      .filter(isProfileFact);
-    const hasUnsupportedAmplification = AMPLIFICATION_PATTERNS.some(
-      ({ pattern }) => pattern.test(text) && !facts.some((fact) => pattern.test(`${fact.label} ${fact.value}`))
-    );
-    if (hasUnsupportedAmplification) {
       droppedLineCount += 1;
       return [];
     }

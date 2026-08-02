@@ -272,7 +272,10 @@ describe("draftApplicationMaterial", () => {
     expect(result.guardrailNotes).toContain("TypeScript 项目经验无确认事实支撑,未纳入材料。");
   });
 
-  it("挡住语义放大：fact 只支持'用过 React'，生成'精通 React'应被丢弃", async () => {
+  it("D032：机制层不再做字面词匹配丢行，只要 factIds 可溯源就保留（强度判断交给 prompt，不在机制层）", async () => {
+    // 这条曾断言机制层会拦"精通/主导"等词（AMPLIFICATION_PATTERNS）。D032 已裁定删除该正则：
+    // 它与 D005"换专业术语命名真做过的事"结构性冲突，且丢弃是静默的。
+    // 现在机制层只负责 factId 溯源，强度判断完全交给 prompt + 用户输出侧过目。
     const profile = buildProfile([
       buildFact({ id: "fact-react", label: "React", value: "用过 React 写过一个页面" })
     ]);
@@ -288,32 +291,16 @@ describe("draftApplicationMaterial", () => {
 
     const result = await draftApplicationMaterial({ profile, job: buildJob(), scoreResult, client });
 
-    expect(result.resumeLines).toEqual([]);
-    expect(result.status).toBe("blocked");
-    expect(result.guardrailNotes.some((note) => note.includes("丢弃"))).toBe(true);
+    expect(result.resumeLines).toEqual([{ text: "精通 React，主导过多个项目架构设计。", factIds: ["fact-react"] }]);
   });
 
-  it("保留限定词：fact 是'课程项目'，输出不能丢掉这个限定制造职业经历暗示", async () => {
+  it("D032：机制层不再检查限定词是否被丢弃，只要 factIds 可溯源就保留", async () => {
     const profile = buildProfile([
       buildFact({ id: "fact-course", label: "算法", value: "在课程项目里实现过排序算法" })
     ]);
     const scoreResult = buildScoreResult([
       buildRequirementResult({ requirementId: "req-algo", matchedFactIds: ["fact-course"] })
     ]);
-
-    const honestClient = createMockClient(
-      JSON.stringify({
-        greeting: "您好。",
-        resumeLines: [{ text: "在课程项目中实现过排序算法。", factIds: ["fact-course"] }]
-      })
-    );
-    const honestResult = await draftApplicationMaterial({
-      profile,
-      job: buildJob(),
-      scoreResult,
-      client: honestClient
-    });
-    expect(honestResult.resumeLines).toEqual([{ text: "在课程项目中实现过排序算法。", factIds: ["fact-course"] }]);
 
     const amplifiedClient = createMockClient(
       JSON.stringify({
@@ -327,7 +314,9 @@ describe("draftApplicationMaterial", () => {
       scoreResult,
       client: amplifiedClient
     });
-    expect(amplifiedResult.resumeLines).toEqual([]);
+    expect(amplifiedResult.resumeLines).toEqual([
+      { text: "资深算法工程师，精通排序算法架构设计。", factIds: ["fact-course"] }
+    ]);
   });
 
   it("gracefully blocks on garbage or empty json", async () => {
