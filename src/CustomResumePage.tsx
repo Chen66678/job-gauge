@@ -7,6 +7,7 @@ import './CustomResumePage.css'
 type CustomResumeApi = {
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
   exportResume: (jobId: string) => Promise<CoreApiResult<string>>
+  renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
 }
 
 export default function CustomResumePage({ jobId, onBack }: { jobId: string; onBack: () => void }) {
@@ -14,6 +15,8 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
   const [material, setMaterial] = useState<MaterialPreview | null>(null)
   const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
+  const [exportingImage, setExportingImage] = useState(false)
+  const [expandedFactIds, setExpandedFactIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const activeJobIdRef = useRef(jobId)
 
@@ -54,6 +57,31 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
     } finally {
       setExporting(false)
     }
+  }
+
+  const exportImage = async () => {
+    setExportingImage(true)
+    setError(null)
+    try {
+      const dataUrl = unwrap(await api.renderResumeImage(jobId))
+      const link = document.createElement('a')
+      link.href = dataUrl
+      link.download = '简历图.png'
+      link.click()
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setExportingImage(false)
+    }
+  }
+
+  const toggleFact = (factId: string) => {
+    setExpandedFactIds(current => {
+      const next = new Set(current)
+      if (next.has(factId)) next.delete(factId)
+      else next.add(factId)
+      return next
+    })
   }
 
   const statusContent = material ? {
@@ -135,7 +163,13 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
                   <ul className="cr-fact-list">
                     {material.usedFacts.map(fact => (
                       <li key={fact.factId} className="cr-fact-item">
-                        <div><strong>{fact.label}</strong><p>{fact.value}</p></div>
+                        <div>
+                          <strong>{fact.label}</strong>
+                          <p className={expandedFactIds.has(fact.factId) ? 'cr-fact-value' : 'cr-fact-value cr-fact-value--collapsed'}>{fact.value}</p>
+                          <button type="button" className="text-button cr-fact-toggle" aria-expanded={expandedFactIds.has(fact.factId)} onClick={() => toggleFact(fact.factId)}>
+                            {expandedFactIds.has(fact.factId) ? '收起' : '展开'}
+                          </button>
+                        </div>
                         <span className="cr-source-badge">{fact.source}</span>
                       </li>
                     ))}
@@ -158,9 +192,14 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
 
           <footer className="cr-actions">
             <p>{material.status === 'blocked' ? '补充资料后可重新生成并导出。' : '导出前建议最后通读一遍正文。'}</p>
-            <button type="button" className="primary-button" disabled={exporting || material.status === 'blocked'} onClick={() => void exportMaterial()}>
-              {exporting ? '导出中…' : '导出 Markdown'}
-            </button>
+            <div className="cr-export-buttons">
+              <button type="button" className="primary-button" disabled={exporting || exportingImage || material.status === 'blocked'} onClick={() => void exportMaterial()}>
+                {exporting ? '导出中…' : '导出 Markdown'}
+              </button>
+              <button type="button" className="primary-button" disabled={exporting || exportingImage || material.status === 'blocked'} onClick={() => void exportImage()}>
+                {exportingImage ? '导出中…' : '导出图片'}
+              </button>
+            </div>
           </footer>
         </>
       )}

@@ -216,6 +216,29 @@ describe('CustomResumePage', () => {
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:resume')
   })
 
+  it('exports the rendered resume image through the existing renderer path', async () => {
+    const draftMaterial = vi.fn(async () => ({
+      status: 'ready' as const,
+      greeting: '',
+      resumeLines: [],
+      usedFacts: [],
+      blockedFacts: [],
+      guardrailNotes: [],
+    }))
+    const renderResumeImage = vi.fn(async () => 'data:image/png;base64,abc123')
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    window.coreApi = { draftMaterial, exportResume: vi.fn(), renderResumeImage } as unknown as typeof window.coreApi
+
+    render(createElement(CustomResumePage, { jobId: 'job-new', onBack: vi.fn() }))
+
+    await screen.findByText('已生成，可导出')
+    fireEvent.click(screen.getByRole('button', { name: '导出图片' }))
+    await waitFor(() => expect(renderResumeImage).toHaveBeenCalledWith('job-new'))
+    const link = click.mock.instances[0] as unknown as HTMLAnchorElement
+    expect(link.download).toBe('简历图.png')
+    expect(link.href).toContain('data:image/png;base64,abc123')
+  })
+
   it('shows generation errors and retries without a confirmation gate', async () => {
     const draftMaterial = vi.fn()
       .mockResolvedValueOnce({ error: '生成失败' })
@@ -244,7 +267,7 @@ describe('CustomResumePage', () => {
         status: 'needs_review' as const,
         greeting: '您好',
         resumeLines: [{ text: '负责核心项目', factIds: ['fact-1'] }],
-        usedFacts: [{ factId: 'fact-1', label: '核心项目', value: '负责核心项目', source: 'resume' }],
+        usedFacts: [{ factId: 'fact-1', label: '核心项目', value: '负责核心项目。'.repeat(20), source: 'resume' }],
         blockedFacts: [],
         guardrailNotes: ['internal-only-note'],
       })),
@@ -257,6 +280,13 @@ describe('CustomResumePage', () => {
     expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.getByText('resume')).not.toBeNull()
     expect(screen.queryByText('internal-only-note')).toBeNull()
+    const factValue = screen.getByText('负责核心项目。'.repeat(20))
+    expect(factValue.className).toContain('cr-fact-value--collapsed')
+    const toggle = screen.getByRole('button', { name: '展开' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(factValue.className).not.toContain('cr-fact-value--collapsed')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
   it('shows blocked facts, recovery action, and disables export', async () => {
@@ -278,6 +308,7 @@ describe('CustomResumePage', () => {
     await screen.findByText('部分关键事实无法安全写入')
     expect(screen.getAllByText('项目规模').length).toBeGreaterThan(0)
     expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '导出图片' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '返回并补充资料 →' }))
     expect(onBack).toHaveBeenCalledOnce()
     expect(screen.queryByText('do-not-render')).toBeNull()
