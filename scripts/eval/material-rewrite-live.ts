@@ -107,9 +107,13 @@ async function main() {
     console.log(`resumeLines 条数: ${material.resumeLines.length}`);
 
     let verbatimCount = 0;
+    let resumeLineChars = 0;
+    const usedFactIds = new Set<string>();
     for (const [i, line] of material.resumeLines.entries()) {
       const copyCheck = isNearVerbatimCopy(line.text, confirmedFacts);
       if (copyCheck.copied) verbatimCount++;
+      resumeLineChars += line.text.length;
+      line.factIds.forEach((id) => usedFactIds.add(id));
       console.log(
         `  [${i + 1}] ${copyCheck.copied ? "⚠️逐字/近逐字照搬" : "✅已改写"} factIds=[${line.factIds.join(", ")}]`
       );
@@ -125,6 +129,13 @@ async function main() {
         : `[红线告警] 出现库外 factId: ${JSON.stringify(fabricated)}`
     );
     console.log(`[改写质量信号] 逐字/近逐字照搬行数 = ${verbatimCount}/${material.resumeLines.length}`);
+    const factCharsById = new Map(confirmedFacts.map((f) => [f.id, f.value.length]));
+    const matchedFactChars = [...usedFactIds].reduce((sum, id) => sum + (factCharsById.get(id) ?? 0), 0);
+    const thicknessRatio = matchedFactChars > 0 ? resumeLineChars / matchedFactChars : NaN;
+    console.log(
+      `[厚度比信号] resumeLines总字符=${resumeLineChars}, 命中事实总字符=${matchedFactChars}, 厚度比=${thicknessRatio.toFixed(2)}` +
+        (thicknessRatio < 0.3 ? " ⚠️低于 0.30 地板" : "")
+    );
     if (material.guardrailNotes.length > 0) {
       console.log(`guardrailNotes: ${JSON.stringify(material.guardrailNotes)}`);
     }
