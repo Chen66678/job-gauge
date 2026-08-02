@@ -30,6 +30,7 @@ import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTED_JOB_COUNT_KEY,
   COLLECTED_JOB_IDS_KEY,
+  CURRENT_VIEWED_JOB_ID_KEY,
   DETAIL_PANEL_STATUS_KEY,
   incrementSessionCollectedCount,
   type CollectionRecord,
@@ -74,6 +75,16 @@ function text(el: Element | null): string {
 
 function extractTitle(): string {
   return text(firstMatch(TITLE_SELECTORS));
+}
+
+// 这是 src/domain/orchestration.ts buildJobId 的镜像实现，因为两个包不共享代码；city 固定传空字符串是因为 electron/main.cjs 的 /api/jobs 处理器目前永远这样传；如果那边的算法或这个假设变了，这里必须同步改。
+export function computeAppJobId(title: string, company: string): string {
+  const slug = `${company}-${title}-`
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+  return `job-${slug || 'item'}`;
 }
 
 // BOSS Zhipin pads job descriptions with zero-size/hidden spans (each paired
@@ -625,6 +636,9 @@ function observeDetailPanel() {
 
     if (currentTitle && currentTitle !== lastTitle) {
       lastTitle = currentTitle;
+      void chrome.storage.local.set({
+        [CURRENT_VIEWED_JOB_ID_KEY]: computeAppJobId(currentTitle, extractCompany()),
+      });
       scheduleAutoCollect();
     } else if (!currentTitle) {
       lastTitle = '';

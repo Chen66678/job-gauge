@@ -9,6 +9,7 @@ vi.mock('../../entrypoints/shared/collectionState', () => ({
   AUTO_COLLECT_ENABLED_KEY: 'autoCollectEnabled',
   COLLECTION_RECORDS_KEY: 'collectionRecords',
   DETAIL_PANEL_STATUS_KEY: 'detailPanelStatus',
+  CURRENT_VIEWED_JOB_ID_KEY: 'currentViewedJobId',
   COLLECTED_JOB_IDS_KEY: 'collectedJobIds',
   SESSION_COLLECTED_JOB_COUNT_KEY: 'sessionCollectedJobCount',
   parseCollectionRecords: (value: unknown) => Array.isArray(value) ? value : [],

@@ -3,6 +3,7 @@ export const COLLECTED_JOB_IDS_KEY = 'collectedJobIds';
 export const COLLECTED_JOB_COUNT_KEY = 'collectedJobCount';
 export const COLLECTION_RECORDS_KEY = 'collectionRecords';
 export const DETAIL_PANEL_STATUS_KEY = 'detailPanelStatus';
+export const CURRENT_VIEWED_JOB_ID_KEY = 'currentViewedJobId';
 // Distinct from COLLECTED_JOB_COUNT_KEY, which is a lifetime total tied to
 // the jobId dedup Set and never resets (that identity bookkeeping must not
 // change — it's what stops the same job from being POSTed to the backend

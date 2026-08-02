@@ -22,6 +22,15 @@ async function getStoredToken(): Promise<string> {
   return typeof token === 'string' ? token : '';
 }
 
+async function getResponseError(response: Response): Promise<string | null> {
+  try {
+    const data = (await response.clone().json()) as { error?: unknown };
+    return typeof data.error === 'string' && data.error.trim() ? data.error : null;
+  } catch {
+    return null;
+  }
+}
+
 async function postToLocalApp(payload: JdPayload): Promise<PostResult> {
   let lastError = '未能连接到本地应用';
   const token = await getStoredToken();
@@ -38,10 +47,13 @@ async function postToLocalApp(payload: JdPayload): Promise<PostResult> {
       });
 
       if (!response.ok) {
-        lastError = response.status === 403
-          ? `端口 ${port} 拒绝访问，请检查 token 是否配置正确`
-          : `端口 ${port} 返回 HTTP ${response.status}`;
-        continue;
+        if (response.status === 403) {
+          return { ok: false, error: `端口 ${port} 拒绝访问，请检查 token 是否配置正确` };
+        }
+        return {
+          ok: false,
+          error: await getResponseError(response) ?? `端口 ${port} 返回 HTTP ${response.status}`,
+        };
       }
 
       const data = (await response.json()) as { ok?: boolean };
@@ -65,23 +77,25 @@ export async function fetchResumeImage(jobId: string): Promise<Blob> {
   }
 
   for (const port of CANDIDATE_PORTS) {
+    let response: Response;
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/resume-image?jobId=${encodeURIComponent(jobId)}`, {
+      response = await fetch(`http://127.0.0.1:${port}/api/resume-image?jobId=${encodeURIComponent(jobId)}`, {
         method: 'GET',
         headers: { 'X-Radar-Token': token },
       });
-
-      if (!response.ok) {
-        lastError = response.status === 403
-          ? `端口 ${port} 拒绝访问，请检查 token 是否配置正确`
-          : `端口 ${port} 返回 HTTP ${response.status}`;
-        continue;
-      }
-
-      return await response.blob();
     } catch (err) {
       lastError = `端口 ${port} 连接失败: ${err instanceof Error ? err.message : String(err)}`;
+      continue;
     }
+
+    if (!response.ok) {
+      if (response.status === 403) {
+        throw new Error(`端口 ${port} 拒绝访问，请检查 token 是否配置正确`);
+      }
+      throw new Error(await getResponseError(response) ?? `端口 ${port} 返回 HTTP ${response.status}`);
+    }
+
+    return await response.blob();
   }
 
   throw new Error(lastError);

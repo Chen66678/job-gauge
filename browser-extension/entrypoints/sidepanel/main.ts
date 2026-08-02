@@ -2,6 +2,7 @@ import {
   AUTO_COLLECT_ENABLED_KEY,
   COLLECTION_RECORDS_KEY,
   DETAIL_PANEL_STATUS_KEY,
+  CURRENT_VIEWED_JOB_ID_KEY,
   COLLECTED_JOB_IDS_KEY,
   parseCollectionRecords,
   resetSessionCollectedCount,
@@ -38,7 +39,14 @@ function renderCopyImageStatus(status: CopyImageStatus, message = '') {
 }
 
 async function resolveCurrentJobId(): Promise<string | null> {
-  const stored = await chrome.storage.local.get([COLLECTION_RECORDS_KEY, COLLECTED_JOB_IDS_KEY]);
+  const stored = await chrome.storage.local.get([
+    CURRENT_VIEWED_JOB_ID_KEY,
+    COLLECTION_RECORDS_KEY,
+    COLLECTED_JOB_IDS_KEY,
+  ]);
+  if (typeof stored[CURRENT_VIEWED_JOB_ID_KEY] === 'string' && stored[CURRENT_VIEWED_JOB_ID_KEY].trim()) {
+    return stored[CURRENT_VIEWED_JOB_ID_KEY].trim();
+  }
   const records = parseCollectionRecords(stored[COLLECTION_RECORDS_KEY]);
   for (const record of records) {
     if (typeof record.jobId === 'string' && record.jobId.trim()) {
