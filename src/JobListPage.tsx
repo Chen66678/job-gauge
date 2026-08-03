@@ -106,6 +106,7 @@ declare global {
       clearByokKey: () => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
       getLocalApiToken: () => Promise<{ token: string }>
       renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
+      openExternalUrl: (url: string) => Promise<CoreApiResult<void>>
     }
   }
 }
@@ -245,6 +246,14 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
     .sort((left, right) => (right.pct ?? 0) - (left.pct ?? 0))
     .slice(0, EVIDENCE_DISPLAY_LIMIT)
 
+  const considerationItems: Array<{ key: string; text: string; note: string; pending?: boolean }> = [
+    ...job.risks.map(r => ({ key: r, text: r, note: '可能影响你的工作体验' })),
+    ...job.gaps.map(g => ({ key: g, text: g, note: '当前经历与要求仍有距离' })),
+    ...job.skills
+      .filter(skill => !skill.measured)
+      .map(skill => ({ key: skill.label, text: `${skill.label}：经历尚未确认`, note: '简历中暂时没有这部分信息', pending: true })),
+  ].slice(0, EVIDENCE_DISPLAY_LIMIT)
+
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
       <div className="expand-inner">
@@ -285,27 +294,15 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
             </div>
           </section>
 
-          {(job.risks.length > 0 || job.gaps.length > 0 || pendingCount > 0) && (
+          {considerationItems.length > 0 && (
             <section className="decision-column considerations">
               <div className="decision-section-title">值得再确认</div>
               <div className="decision-list">
-                {job.risks.map(r => (
-                  <div key={r} className="consideration-item">
-                    <span className="consideration-name" title={r}>{r}</span>
-                    <span className="consideration-note">可能影响你的工作体验</span>
-                  </div>
-                ))}
-                {job.gaps.map(g => (
-                  <div key={g} className="consideration-item">
-                    <span className="consideration-name" title={g}>{g}</span>
-                    <span className="consideration-note">当前经历与要求仍有距离</span>
-                  </div>
-                ))}
-                {job.skills.filter(skill => !skill.measured).map(skill => (
-                  <div key={skill.label} className="consideration-item pending">
+                {considerationItems.map(item => (
+                  <div key={item.key} className={`consideration-item ${item.pending ? 'pending' : ''}`}>
                     <div className="consideration-copy">
-                      <span className="consideration-name" title={`${skill.label}：经历尚未确认`}>{skill.label}：经历尚未确认</span>
-                      <span className="consideration-note">简历中暂时没有这部分信息</span>
+                      <span className="consideration-name" title={item.text}>{item.text}</span>
+                      <span className="consideration-note">{item.note}</span>
                     </div>
                   </div>
                 ))}
@@ -326,7 +323,16 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
           <span>{job.salary}</span>
           {job.workAddress && <span>{job.workAddress}</span>}
           {job.sourceUrl ? (
-            <a className="meta-link" href={`${job.sourceUrl}${job.sourceUrl.includes('?') ? '&' : '?'}jobId=${encodeURIComponent(job.id)}`} target="_blank" rel="noreferrer">查看原岗位 ↗</a>
+            <button
+              type="button"
+              className="meta-link meta-link-button"
+              onClick={() => {
+                const url = `${job.sourceUrl}${job.sourceUrl!.includes('?') ? '&' : '?'}jobId=${encodeURIComponent(job.id)}`
+                void window.coreApi.openExternalUrl(url)
+              }}
+            >
+              查看原岗位 ↗
+            </button>
           ) : (
             <span className="meta-link disabled" title="当前岗位没有保存来源链接">原岗位链接未保存</span>
           )}

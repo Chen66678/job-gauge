@@ -583,6 +583,7 @@ body {
 .meta-link:hover { text-decoration: underline; text-underline-offset: 3px; }
 .meta-link.disabled { color: var(--text-muted); cursor: default; }
 .meta-link.disabled:hover { text-decoration: none; }
+.meta-link-button { border: 0; padding: 0; background: transparent; font: inherit; }
 
 
 .expand-actions {
