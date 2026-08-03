@@ -10,3 +10,8 @@ export function exportToMarkdown(material: MaterialPreview, jobTitle: string, co
 
   return `${sections.join("\n\n")}\n`;
 }
+
+export function exportToPlainText(material: MaterialPreview): string {
+  const lines = [material.greeting.trim(), ...material.resumeLines.map(line => line.text.trim())].filter(Boolean);
+  return lines.join("\n");
+}

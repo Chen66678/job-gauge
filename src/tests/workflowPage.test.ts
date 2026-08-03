@@ -187,7 +187,7 @@ describe('FollowUpDrawer', () => {
 })
 
 describe('CustomResumePage', () => {
-  it('starts generation immediately and exports the generated markdown', async () => {
+  it('starts generation immediately and copies the generated plain text', async () => {
     const draftMaterial = vi.fn(async () => ({
       status: 'ready' as const,
       greeting: '您好',
@@ -196,24 +196,18 @@ describe('CustomResumePage', () => {
       blockedFacts: [],
       guardrailNotes: [],
     }))
-    const exportResume = vi.fn(async () => '# 定制简历')
-    const createObjectURL = vi.fn(() => 'blob:resume')
-    const revokeObjectURL = vi.fn()
-    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectURL })
-    window.coreApi = { draftMaterial, exportResume } as unknown as typeof window.coreApi
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    window.coreApi = { draftMaterial } as unknown as typeof window.coreApi
 
     render(createElement(CustomResumePage, { jobId: 'job-new', onBack: vi.fn() }))
 
     await screen.findByText(/负责 React 项目/)
     expect(draftMaterial).toHaveBeenCalledOnce()
     expect(draftMaterial).toHaveBeenCalledWith('job-new')
-    fireEvent.click(screen.getByRole('button', { name: '导出 Markdown' }))
-    await waitFor(() => expect(exportResume).toHaveBeenCalledWith('job-new'))
-    expect(createObjectURL).toHaveBeenCalledOnce()
-    expect(click).toHaveBeenCalledOnce()
-    expect(revokeObjectURL).toHaveBeenCalledWith('blob:resume')
+    fireEvent.click(screen.getByRole('button', { name: '复制正文文字' }))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('您好\n负责 React 项目'))
+    expect(screen.getByRole('button', { name: '已复制' })).not.toBeNull()
   })
 
   it('exports the rendered resume image through the existing renderer path', async () => {
@@ -271,13 +265,12 @@ describe('CustomResumePage', () => {
         blockedFacts: [],
         guardrailNotes: ['internal-only-note'],
       })),
-      exportResume: vi.fn(async () => '# 定制简历'),
     } as unknown as typeof window.coreApi
 
     render(createElement(CustomResumePage, { jobId: 'job-new', onBack: vi.fn() }))
 
     await screen.findByText('这份材料有需要你复核的地方')
-    expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: '复制正文文字' }) as HTMLButtonElement).disabled).toBe(false)
     expect(screen.getByText('resume')).not.toBeNull()
     expect(screen.queryByText('internal-only-note')).toBeNull()
     const factValue = screen.getByText('负责核心项目。'.repeat(20))
@@ -300,14 +293,13 @@ describe('CustomResumePage', () => {
         blockedFacts: [{ factId: 'fact-blocked', label: '项目规模', value: '', source: 'manual' }],
         guardrailNotes: ['do-not-render'],
       })),
-      exportResume: vi.fn(),
     } as unknown as typeof window.coreApi
 
     render(createElement(CustomResumePage, { jobId: 'job-new', onBack }))
 
     await screen.findByText('部分关键事实无法安全写入')
     expect(screen.getAllByText('项目规模').length).toBeGreaterThan(0)
-    expect((screen.getByRole('button', { name: '导出 Markdown' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '复制正文文字' }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByRole('button', { name: '导出图片' }) as HTMLButtonElement).disabled).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '返回并补充资料 →' }))
     expect(onBack).toHaveBeenCalledOnce()

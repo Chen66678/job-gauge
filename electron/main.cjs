@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require("electron");
+const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, safeStorage, shell } = require("electron");
 require("tsx/cjs");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -244,6 +244,37 @@ function registerCoreApiHandlers(core) {
   registerByokHandlers(core);
 }
 
+function registerSystemHandlers(core) {
+  ipcMain.handle("system:copyResumeImage", async (_event, jobId) => {
+    try {
+      const dataUrl = await core.api.renderResumeImage(jobId);
+      if (dataUrl && typeof dataUrl === "object" && "error" in dataUrl) return dataUrl;
+      clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
+      return undefined;
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle("system:openExternal", async (_event, url) => {
+    let parsedUrl;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return { error: "invalid url" };
+    }
+    if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+      return { error: "unsupported url scheme" };
+    }
+    try {
+      await shell.openExternal(url);
+      return undefined;
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+}
+
 function isLoopbackAddress(address) {
   return address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
 }
@@ -264,18 +295,6 @@ function sendJson(response, statusCode, body, origin) {
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.writeHead(statusCode);
   response.end(JSON.stringify(body));
-}
-
-function sendPngDataUrl(response, dataUrl, origin) {
-  const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-  if (!match) throw new Error("resume image renderer returned an invalid PNG data URL");
-  const png = Buffer.from(match[1], "base64");
-  if (isAllowedOrigin(origin)) response.setHeader("Access-Control-Allow-Origin", origin);
-  response.setHeader("Vary", "Origin");
-  response.setHeader("Content-Type", "image/png");
-  response.setHeader("Content-Length", String(png.length));
-  response.writeHead(200);
-  response.end(png);
 }
 
 function readJson(request) {
@@ -309,29 +328,22 @@ async function startJobApi(core, localApiToken, candidatePorts = JOB_API_PORTS) 
       if (origin && !isAllowedOrigin(origin)) return sendJson(response, 403, { error: "forbidden origin" });
       const requestUrl = new URL(request.url, `http://127.0.0.1:${port}`);
       const isJobsPath = requestUrl.pathname === "/api/jobs";
-      const isResumeImagePath = requestUrl.pathname === "/api/resume-image";
-      if (request.method === "OPTIONS" && (isJobsPath || isResumeImagePath)) {
+      if (request.method === "OPTIONS" && isJobsPath) {
         if (isAllowedOrigin(origin)) {
           response.setHeader("Access-Control-Allow-Origin", origin);
-          response.setHeader("Access-Control-Allow-Methods", isJobsPath ? "POST, OPTIONS" : "GET, OPTIONS");
+          response.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
           response.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Radar-Token");
         }
         response.writeHead(204);
         return response.end();
       }
       const isJobsRequest = isJobsPath && request.method === "POST";
-      const isResumeImageRequest = isResumeImagePath && request.method === "GET";
-      if (!isJobsRequest && !isResumeImageRequest) return sendJson(response, 404, { error: "not found" }, origin);
+      if (!isJobsRequest) return sendJson(response, 404, { error: "not found" }, origin);
       if (!isLoopbackAddress(request.socket.remoteAddress)) return sendJson(response, 403, { error: "forbidden" }, origin);
       // Host → Origin → 回环 → token，四道防线顺序不可颠倒；token 校验放在
       // 回环之后、readJson 之前，未过前三关或未带正确 token 都不会触碰请求体。
       if (request.headers["x-radar-token"] !== localApiToken) return sendJson(response, 403, { error: "forbidden" }, origin);
       try {
-        if (isResumeImageRequest) {
-          const jobId = requestUrl.searchParams.get("jobId");
-          if (!jobId) return sendJson(response, 400, { error: "jobId is required" }, origin);
-          return sendPngDataUrl(response, await core.api.renderResumeImage(jobId), origin);
-        }
         const input = await readJson(request);
         if (!input || typeof input !== "object" || typeof input.title !== "string" || typeof input.company !== "string" || typeof input.description !== "string") {
           return sendJson(response, 400, { error: "title, company, and description are required" }, origin);
@@ -438,6 +450,7 @@ if (!process.env.BYOK_MAIN_TEST_MODE) {
   app.whenReady().then(async () => {
     const core = createMainCoreApi();
     registerCoreApiHandlers(core);
+    registerSystemHandlers(core);
     let apiError = null;
     try {
       await startJobApi(core, core.localApiToken);

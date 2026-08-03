@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld("coreApi", {
   draftMaterial: (jobId) => invokeCoreApi("draftMaterial", jobId),
   exportResume: (jobId) => invokeCoreApi("exportResume", jobId),
   renderResumeImage: (jobId) => invokeCoreApi("renderResumeImage", jobId),
+  copyResumeImage: (jobId) => ipcRenderer.invoke("system:copyResumeImage", jobId),
+  openExternalUrl: (url) => ipcRenderer.invoke("system:openExternal", url),
   preScreenJob: (jobId, keywords) => invokeCoreApi("preScreenJob", jobId, keywords),
   diagnoseBatch: () => invokeCoreApi("diagnoseBatch"),
   clear: () => invokeCoreApi("clear"),

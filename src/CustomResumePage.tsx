@@ -2,20 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import type { MaterialPreview } from './types'
 import type { CoreApiResult } from './coreApiResult'
 import { errorText, unwrap } from './coreApiResult'
+import { exportToPlainText } from './domain/exportResume'
 import './CustomResumePage.css'
 
 type CustomResumeApi = {
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
-  exportResume: (jobId: string) => Promise<CoreApiResult<string>>
   renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
+  copyResumeImage: (jobId: string) => Promise<CoreApiResult<void>>
+  openExternalUrl: (url: string) => Promise<CoreApiResult<void>>
 }
 
 export default function CustomResumePage({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const api = window.coreApi as unknown as CustomResumeApi
   const [material, setMaterial] = useState<MaterialPreview | null>(null)
   const [loading, setLoading] = useState(true)
-  const [exporting, setExporting] = useState(false)
   const [exportingImage, setExportingImage] = useState(false)
+  const [copyingText, setCopyingText] = useState(false)
+  const [copyingImage, setCopyingImage] = useState(false)
+  const [openingExternal, setOpeningExternal] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null)
   const [expandedFactIds, setExpandedFactIds] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string | null>(null)
   const activeJobIdRef = useRef(jobId)
@@ -37,25 +43,55 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
   useEffect(() => {
     activeJobIdRef.current = jobId
     setMaterial(null)
+    setSourceUrl(null)
     void generate()
+    void Promise.resolve((window.coreApi as { getState?: () => Promise<{ jobs: Array<{ job: { id: string; sourceUrl: string | null } }> }> }).getState?.()).then(state => {
+      if (activeJobIdRef.current !== jobId) return
+      setSourceUrl(state?.jobs.find(record => record.job.id === jobId)?.job.sourceUrl ?? null)
+    }).catch(() => {
+      if (activeJobIdRef.current === jobId) setSourceUrl(null)
+    })
   }, [jobId])
 
-  const exportMaterial = async () => {
-    setExporting(true)
+  const copyPlainText = async () => {
+    if (!material) return
+    setCopyingText(true)
     setError(null)
     try {
-      const markdown = unwrap(await api.exportResume(jobId))
-      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = '定制简历.md'
-      link.click()
-      URL.revokeObjectURL(url)
+      await navigator.clipboard.writeText(exportToPlainText(material))
+      setCopyStatus('copied')
+      window.setTimeout(() => setCopyStatus('idle'), 1500)
     } catch (reason) {
       setError(errorText(reason))
     } finally {
-      setExporting(false)
+      setCopyingText(false)
+    }
+  }
+
+  const copyResumeImage = async () => {
+    setCopyingImage(true)
+    setError(null)
+    try {
+      unwrap(await api.copyResumeImage(jobId))
+      setCopyStatus('copied')
+      window.setTimeout(() => setCopyStatus('idle'), 1500)
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setCopyingImage(false)
+    }
+  }
+
+  const openExternalUrl = async () => {
+    if (!sourceUrl) return
+    setOpeningExternal(true)
+    setError(null)
+    try {
+      unwrap(await api.openExternalUrl(sourceUrl))
+    } catch (reason) {
+      setError(errorText(reason))
+    } finally {
+      setOpeningExternal(false)
     }
   }
 
@@ -193,11 +229,17 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
           <footer className="cr-actions">
             <p>{material.status === 'blocked' ? '补充资料后可重新生成并导出。' : '导出前建议最后通读一遍正文。'}</p>
             <div className="cr-export-buttons">
-              <button type="button" className="primary-button" disabled={exporting || exportingImage || material.status === 'blocked'} onClick={() => void exportMaterial()}>
-                {exporting ? '导出中…' : '导出 Markdown'}
+              <button type="button" className="primary-button" disabled={copyingText || copyingImage || exportingImage || material.status === 'blocked'} onClick={() => void copyPlainText()}>
+                {copyingText ? '复制中…' : copyStatus === 'copied' ? '已复制' : '复制正文文字'}
               </button>
-              <button type="button" className="primary-button" disabled={exporting || exportingImage || material.status === 'blocked'} onClick={() => void exportImage()}>
+              <button type="button" className="primary-button" disabled={copyingText || copyingImage || exportingImage || material.status === 'blocked'} onClick={() => void copyResumeImage()}>
+                {copyingImage ? '复制中…' : '复制简历图片'}
+              </button>
+              <button type="button" className="primary-button" disabled={copyingText || copyingImage || exportingImage || material.status === 'blocked'} onClick={() => void exportImage()}>
                 {exportingImage ? '导出中…' : '导出图片'}
+              </button>
+              <button type="button" className="primary-button" disabled={!sourceUrl || copyingText || copyingImage || openingExternal || material.status === 'blocked'} onClick={() => void openExternalUrl()}>
+                {openingExternal ? '打开中…' : '去这个岗位 →'}
               </button>
             </div>
           </footer>
