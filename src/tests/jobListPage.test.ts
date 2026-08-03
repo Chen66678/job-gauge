@@ -81,7 +81,7 @@ afterEach(() => {
 })
 
 describe('JobListPage', () => {
-  it('keeps JD details collapsed and opens follow-up from considerations', async () => {
+  it('opens follow-up from considerations', async () => {
     const onOpenFollowUp = vi.fn()
     window.coreApi = {
       getState: vi.fn(async () => buildState(68)),
@@ -95,14 +95,8 @@ describe('JobListPage', () => {
 
     await screen.findByText('前端工程师')
     fireEvent.click(screen.getByText('前端工程师'))
-    const jdToggle = screen.getByRole('button', { name: '查看完整 JD ▾' })
-    expect(jdToggle.getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText('岗位职责')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '补一下这些信息 →' }))
     expect(onOpenFollowUp).toHaveBeenCalledWith('job-1')
-    fireEvent.click(jdToggle)
-    expect(screen.getByRole('button', { name: '查看完整 JD ▴' }).getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByText('岗位职责')).not.toBeNull()
   })
 
   it('shows score comparison only after explicit reevaluation completes', async () => {

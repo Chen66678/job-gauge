@@ -454,7 +454,6 @@ body {
   color: #b91c1c;
   font-size: 13px;
 }
-.fact-chip-list { display:flex; flex-wrap:wrap; gap:6px; margin:-3px 0 12px; }.fact-chip { display:inline-flex; align-items:center; padding:3px 7px; border:1px solid var(--green-border); border-radius:999px; background:var(--green-bg); color:var(--green-text); font-size:11px; line-height:16px; }
 .failure-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:0 20px 16px; padding:10px 12px; border:1px solid var(--red-border); border-radius:8px; background:var(--red-bg); color:var(--red-deep); font-size:13px; }.failure-banner button { border:1px solid var(--red-border); border-radius:6px; background:var(--card-bg); color:var(--red-deep); padding:5px 9px; cursor:pointer; font-weight:600; white-space:nowrap; }
 .job-list-empty { display:flex; flex-direction:column; align-items:center; text-align:center; padding:64px 24px; color:var(--text-secondary); }.job-list-empty-icon { display:grid; place-items:center; width:40px; height:40px; border-radius:12px; background:var(--indigo-bg); color:var(--indigo); font-size:28px; }.job-list-empty h2 { margin:12px 0 4px; color:var(--text-primary); font-size:16px; }.job-list-empty p { max-width:360px; margin:0; line-height:1.5; }.job-list-empty-action { margin-top:16px; padding:8px 12px; border:1px solid var(--indigo); border-radius:6px; background:var(--indigo); color:#fff; cursor:pointer; }
 
@@ -497,7 +496,16 @@ body {
 }
 .evidence-name-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .evidence-name,
-.consideration-name { font-size: 14px; font-weight: 550; color: var(--text-primary); }
+.consideration-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--text-primary);
+}
 .evidence-bar {
   align-self: center;
   height: 6px;
@@ -562,66 +570,6 @@ body {
 }
 .experience-link:hover { border-bottom-color: var(--indigo); }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 40px;
-}
-
-.skill-matrix { min-width: 0; }
-.skill-row {
-  min-height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  border-bottom: 1px solid var(--border-hairline);
-}
-.skill-row:last-child { border-bottom: 0; }
-.skill-label {
-  min-width: 0;
-  font-size: 14px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.skill-value {
-  flex-shrink: 0;
-  font-size: 14px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-.skill-value.unknown { color: var(--text-muted); }
-
-.detail-jd-cols { display: flex; gap: 32px; min-width: 0; }
-.detail-jd-col { flex: 1; min-width: 0; }
-.detail-jd-col-label {
-  margin-bottom: 7px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-.detail-jd-list { margin: 0; padding-left: 0; list-style: none; }
-.detail-jd-list li {
-  position: relative;
-  padding-left: 12px;
-  margin-bottom: 6px;
-  font-size: 14px;
-  line-height: 1.6;
-  color: var(--text-secondary);
-}
-.detail-jd-list li::before {
-  content: '';
-  position: absolute;
-  left: 1px;
-  top: 0.68em;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: #a9aea6;
-}
-
 .meta-row {
   display: flex;
   align-items: center;
@@ -636,11 +584,6 @@ body {
 .meta-link.disabled { color: var(--text-muted); cursor: default; }
 .meta-link.disabled:hover { text-decoration: none; }
 
-.jd-collapse { border-bottom: 1px solid var(--border-hairline); }
-.jd-collapse-toggle { width: 100%; border: 0; padding: 14px 0; background: transparent; color: var(--indigo); cursor: pointer; text-align: left; font-size: 13px; font-weight: 600; }
-.jd-collapse-toggle:hover { color: var(--indigo-deep); }
-.jd-collapse-toggle:focus-visible { outline: 2px solid var(--indigo); outline-offset: 3px; border-radius: 4px; }
-.jd-collapse-content { padding: 2px 0 20px; }
 
 .expand-actions {
   display: flex;
@@ -669,7 +612,6 @@ body {
 @media (max-width: 1040px) {
   .job-title-stack { flex-basis: 180px; }
   .job-signals { gap: 10px; }
-  .detail-grid { grid-template-columns: 210px minmax(0, 1fr); gap: 24px; }
   .decision-column { padding-right: 24px; }
   .decision-column.considerations { padding-left: 24px; }
   .evidence-line { grid-template-columns: minmax(100px, 130px) minmax(90px, 1fr) 38px; gap: 10px; }

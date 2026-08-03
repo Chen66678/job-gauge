@@ -26,7 +26,6 @@ type MockJob = {
     tier: 'strong' | 'partial' | 'weak' | 'unmeasured'
     question?: string
   }[]
-  jdSummary: string[]
   requirements: string[]
   industry: string
   workAddress: string | null
@@ -183,7 +182,6 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
       const tier = pct === null ? 'unmeasured' : pct >= 75 ? 'strong' : pct >= 40 ? 'partial' : 'weak'
       return { label: requirement.label, pct, gap, measured, tier, question: requirement.evidence }
     }),
-    jdSummary: record.job.jdText ? [record.job.jdText] : [],
     requirements: requirements.map(requirement => requirement.label),
     industry: '',
     workAddress: record.job.workAddress,
@@ -238,17 +236,14 @@ function StrategyBadge({ job }: { job: MockJob }) {
 }
 
 // ─── Expanded Detail Panel ───────────────────────────────────────
+const EVIDENCE_DISPLAY_LIMIT = 4
+
 function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { job: MockJob; open: boolean; onStartWorkflow?: (jobId: string) => void; onOpenFollowUp?: (jobId: string) => void; onRetry?: (jobId: string) => void }) {
   const pendingCount = job.skills.filter(skill => !skill.measured).length
   const confirmedEvidence = job.skills
     .filter(skill => skill.measured)
     .sort((left, right) => (right.pct ?? 0) - (left.pct ?? 0))
-  const [jdDetailsOpen, setJdDetailsOpen] = useState(false)
-  const jdDetailsId = `job-jd-details-${job.id}`
-
-  useEffect(() => {
-    if (!open) setJdDetailsOpen(false)
-  }, [open])
+    .slice(0, EVIDENCE_DISPLAY_LIMIT)
 
   return (
     <div className={`expand-panel ${open ? 'open' : ''}`}>
@@ -266,20 +261,13 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
               not a machine-generated checklist. */}
           <section className="decision-column">
             <div className="decision-section-title">匹配依据</div>
-            {confirmedEvidence.some(skill => skill.tier === 'strong') && (
-              <div className="fact-chip-list" aria-label="已确认依据">
-                {confirmedEvidence
-                  .filter(skill => skill.tier === 'strong')
-                  .map(skill => <span className="fact-chip" key={skill.label}>✓ 已确认 {skill.label}</span>)}
-              </div>
-            )}
             <div className="decision-list">
               {confirmedEvidence.map(s => (
                 <div key={s.label} className="evidence-item">
                   <div className="evidence-line">
                     <div className="evidence-name-wrap">
                       <span className={`tier-badge tier-${s.tier}`}>{s.tier === 'strong' ? '符合' : s.tier === 'partial' ? '部分符合' : '匹配较弱'}</span>
-                      <span className="evidence-name">{s.label}</span>
+                      <span className="evidence-name" title={s.label}>{s.label}</span>
                     </div>
                     <div className="evidence-bar" aria-hidden="true">
                       <div className={`evidence-bar-fill tier-${s.tier}`} style={{ width: `${s.pct}%` }} />
@@ -303,20 +291,20 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
               <div className="decision-list">
                 {job.risks.map(r => (
                   <div key={r} className="consideration-item">
-                    <span className="consideration-name">{r}</span>
+                    <span className="consideration-name" title={r}>{r}</span>
                     <span className="consideration-note">可能影响你的工作体验</span>
                   </div>
                 ))}
                 {job.gaps.map(g => (
                   <div key={g} className="consideration-item">
-                    <span className="consideration-name">{g}</span>
+                    <span className="consideration-name" title={g}>{g}</span>
                     <span className="consideration-note">当前经历与要求仍有距离</span>
                   </div>
                 ))}
                 {job.skills.filter(skill => !skill.measured).map(skill => (
                   <div key={skill.label} className="consideration-item pending">
                     <div className="consideration-copy">
-                      <span className="consideration-name">{skill.label}：经历尚未确认</span>
+                      <span className="consideration-name" title={`${skill.label}：经历尚未确认`}>{skill.label}：经历尚未确认</span>
                       <span className="consideration-note">简历中暂时没有这部分信息</span>
                     </div>
                   </div>
@@ -341,56 +329,6 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
             <a className="meta-link" href={`${job.sourceUrl}${job.sourceUrl.includes('?') ? '&' : '?'}jobId=${encodeURIComponent(job.id)}`} target="_blank" rel="noreferrer">查看原岗位 ↗</a>
           ) : (
             <span className="meta-link disabled" title="当前岗位没有保存来源链接">原岗位链接未保存</span>
-          )}
-        </div>
-
-        <div className="jd-collapse">
-          <button
-            type="button"
-            className="jd-collapse-toggle"
-            aria-expanded={jdDetailsOpen}
-            aria-controls={jdDetailsId}
-            onClick={() => setJdDetailsOpen(previous => !previous)}
-          >
-            查看完整 JD {jdDetailsOpen ? '▴' : '▾'}
-          </button>
-          {jdDetailsOpen && (
-            <div className="jd-collapse-content" id={jdDetailsId}>
-              <div className="detail-grid">
-                {job.skills.some(skill => !skill.measured) && (
-                  <div className="skill-matrix">
-                    <div className="detail-jd-col-label">尚未确认的经历</div>
-                    {job.skills.filter(skill => !skill.measured).map(skill => (
-                      <div key={skill.label} className="skill-row">
-                        <span className="skill-label">{skill.label}</span>
-                        <span className="skill-value unknown">未确认</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(job.jdSummary.length > 0 || job.requirements.length > 0) && (
-                  <div className="detail-jd-cols">
-                    {job.jdSummary.length > 0 && (
-                      <div className="detail-jd-col">
-                        <div className="detail-jd-col-label">岗位职责</div>
-                        <ul className="detail-jd-list">
-                          {job.jdSummary.map((item, index) => <li key={index}>{item}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                    {job.requirements.length > 0 && (
-                      <div className="detail-jd-col">
-                        <div className="detail-jd-col-label">任职要求</div>
-                        <ul className="detail-jd-list">
-                          {job.requirements.map((item, index) => <li key={index}>{item}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
           )}
         </div>
 
