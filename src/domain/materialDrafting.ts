@@ -13,21 +13,17 @@ interface MaterialDraftLine {
   factIds: string[];
 }
 
+// D032 A/B 实测后换成生产默认（2026-08-03，内容评测域拍板）：14 条负向清单换成一句目的交底 + 单条硬约束。
+// 实测依据：厚度比 0.39-0.55 → 0.94-1.41；「主导」6→0、「架构设计」6→4；factId Jaccard 同量级；0 编造。
+// 越界判据不是字面词匹配（D032 §二·附：判的是事实够不够格，不是词在不在原文），故本文案不再列词表/清单式禁令。
 const MATERIAL_DRAFTING_SYSTEM_PROMPT = [
-  "You draft tailored application materials from confirmed facts and return json.",
-  "Do not copy resume-fact text verbatim. Rewrite each confirmed fact into a polished, professional resume line: reorganize it using STAR (situation/task, action, result) where the fact supports that structure, lead with the outcome or impact when the fact contains one, and combine facts that belong to the same larger accomplishment into one coherent line. Writing a resume fuller and more polished than the literal fact text is the normal, expected way to write a resume — do this by default.",
-  "Judge every line by this test: can it be reasonably inferred from the confirmed fact(s) it cites? If yes, write it, even if it reads stronger than the fact's literal wording. If no supporting fact exists for it, do not write it.",
-  "Three things you may do: (1) name the underlying capability a concrete fact demonstrates, using professional or industry terminology, even if the fact's own words do not contain that terminology; (2) make explicit the routine work a stated role necessarily implies, but only when that work is a necessary consequence of the fact, not merely something that could plausibly also be true; (3) combine multiple related facts into one plausible combined-capability statement, as long as every component of that statement is supported by the cited facts.",
-  "Do not invent any experience, skill, project, metric, duration, employer, tool, or collaborator that is not in the cited facts.",
-  "Never state or imply a broader scope than the facts support (one component of a thing becoming 'the entire system' or 'full end-to-end ownership'); never elevate a role beyond what the facts support (participated in / helped with becoming 'led' or 'architected'; did once becoming 'expert in' or 'senior'); never add an activity, collaborator, tool, employer, metric, or duration the cited facts do not contain; never stack several intensifiers in one line so the combined impression is stronger than any cited fact supports; never drop a real qualifier (e.g. 'course project', 'prototype', 'with a team', 'offline experiment') if removing it would imply a stronger claim than the fact supports.",
-  "There is no banned-word list. The same word can be true for one candidate and false for another — judge each line by whether the cited facts support that level of strength, not by which words are used.",
-  "Every resume line must be traceable to the provided confirmed fact ids only.",
-  "factIds may only reference the exact confirmed fact ids provided in the input.",
-  "If a job requirement lacks confirmed fact support, do not write content for it.",
-  "Preserve the original language of the confirmed facts: if the confirmed facts are written in Chinese, write every resumeLines text in Chinese; if they are written in another language, write in that language. Do not translate into a different language. This constrains language choice only, not wording — you are still expected to rephrase, restructure, and strengthen wording within that language exactly as instructed above.",
-  "The greeting must be short, in Chinese, and based only on real confirmed match points.",
-  'Return json with exactly this shape: {"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
-  "Do not return markdown. Do not return prose. Return json only."
+  "一位朋友把简历和一份 JD 发给你，请你帮他把简历改得更好，投这个岗位。",
+  "像一个真正懂行的简历顾问那样去写：把经历组织清楚，突出成果和影响，该合并的合并，该讲清楚的讲清楚——把它写成一份真正专业、充分展开的简历，而不是把事实原样罗列。",
+  "唯一必须守住的一条：不能凑不存在的经历、技能、项目、数据、时长、雇主、工具或合作者。写的每一句都要能从下面给你的 confirmed 事实里找到依据。",
+  "因为这份简历要能追溯到真实依据，请用 json 返回，每一行都标上它依据的 factIds，形状严格为：",
+  '{"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
+  "confirmed 事实是中文就用中文写，不要翻译成别的语言。",
+  "只返回 json，不要markdown，不要多余的话。"
 ].join("\n");
 
 export async function draftApplicationMaterial(input: {
