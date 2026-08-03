@@ -35,6 +35,8 @@ export async function draftApplicationMaterial(input: {
   job: JobPosting;
   scoreResult: ScoreResult;
   client: OpenAiCompatibleLlmClient;
+  // 仅供评测脚本 A/B 对照用：覆盖系统 prompt 文案。不传时用生产默认值。机制层（下方溯源/丢弃逻辑）不受影响。
+  systemPrompt?: string;
 }): Promise<MaterialPreview> {
   const confirmedFacts = getConfirmedFacts(input.profile);
   if (confirmedFacts.length === 0) {
@@ -49,7 +51,7 @@ export async function draftApplicationMaterial(input: {
   }
 
   const raw = await input.client.completeText({
-    system: MATERIAL_DRAFTING_SYSTEM_PROMPT,
+    system: input.systemPrompt ?? MATERIAL_DRAFTING_SYSTEM_PROMPT,
     user: buildDraftingUserPrompt(input.job, input.scoreResult.breakdown.requirements, confirmedFacts),
     responseFormatJson: true
   });

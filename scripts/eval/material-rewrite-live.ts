@@ -17,6 +17,19 @@ import type { ProfileFact, JobPosting, ScoreResult, UserProfile } from "../../sr
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+// B 版 prompt（本轮 A/B 对照的唯一变量）：不列规则清单，讲目的——像交给一个会写简历的人。
+// 唯一留下的硬约束是"不许无中生有"，只说一次；json 输出形状是为了 factIds 溯源，不是防错清单。
+// 机制层（materialDrafting.ts 的逐行溯源/丢弃）完全不变，跟这段文案无关。
+const PROMPT_VARIANT_B = [
+  "一位朋友把简历和一份 JD 发给你，请你帮他把简历改得更好，投这个岗位。",
+  "像一个真正懂行的简历顾问那样去写：把经历组织清楚，突出成果和影响，该合并的合并，该讲清楚的讲清楚——把它写成一份真正专业、充分展开的简历，而不是把事实原样罗列。",
+  "唯一必须守住的一条：不能凑不存在的经历、技能、项目、数据、时长、雇主、工具或合作者。写的每一句都要能从下面给你的 confirmed 事实里找到依据。",
+  "因为这份简历要能追溯到真实依据，请用 json 返回，每一行都标上它依据的 factIds，形状严格为：",
+  '{"greeting":"...","resumeLines":[{"text":"...","factIds":["fact-..."]}]}',
+  "confirmed 事实是中文就用中文写，不要翻译成别的语言。",
+  "只返回 json，不要markdown，不要多余的话。"
+].join("\n");
+
 function sanitize(s: string): string {
   return s.replace(/sk-[A-Za-z0-9._-]+/g, "[REDACTED_KEY]");
 }
@@ -104,6 +117,9 @@ async function main() {
 
   const jobFilter = process.argv[2]?.trim();
   const repeats = Number(process.argv[3]) || 5;
+  const variant = (process.env.PROMPT_VARIANT?.trim().toUpperCase() || "A") as "A" | "B";
+  const systemPrompt = variant === "B" ? PROMPT_VARIANT_B : undefined;
+  console.log(`prompt 版本: ${variant}${variant === "B" ? "（目的交底，无规则清单）" : "（生产默认，规则清单）"}\n`);
 
   const candidateJobs = state.jobs.filter(
     (j) => j.evaluation && !j.evaluation.vetoed && j.job.requirements.length > 0 && (!jobFilter || j.job.id.includes(jobFilter))
@@ -121,11 +137,15 @@ async function main() {
   // 跨轮重合度：如果模型是按岗位相关性选事实（相关性由岗位+事实决定，不随机），
   // 那么每轮选中的 factId 集合应该高度重合；重合度低说明是随机挑，不是有原则的筛选。
   const roundUsedFactIds: Set<string>[] = [];
+  // 越界用词统计：不是判据（判据是人读+机制层溯源），只是本轮 A/B 对照最有信息量的一个数——
+  // 约束少了之后，这类"可能夸大"的措辞是变多还是变少。
+  const OVERREACH_WORDS = ["主导", "精通", "资深", "架构设计", "全面负责", "独立完成"];
+  const overreachCounts = new Map<string, number>(OVERREACH_WORDS.map((w) => [w, 0]));
 
   for (let round = 1; round <= repeats; round++) {
     console.log(`\n========== 第 ${round}/${repeats} 次复测 ==========`);
     const t0 = Date.now();
-    const material = await draftApplicationMaterial({ profile, job: target.job, scoreResult, client });
+    const material = await draftApplicationMaterial({ profile, job: target.job, scoreResult, client, systemPrompt });
     console.log(`用时 ${Date.now() - t0}ms | status=${material.status}`);
     console.log(`招呼语: ${material.greeting}`);
     console.log(`resumeLines 条数: ${material.resumeLines.length}`);
@@ -138,6 +158,10 @@ async function main() {
       if (copyCheck.copied) verbatimCount++;
       resumeLineChars += line.text.length;
       line.factIds.forEach((id) => usedFactIds.add(id));
+      for (const word of OVERREACH_WORDS) {
+        const matches = line.text.split(word).length - 1;
+        if (matches > 0) overreachCounts.set(word, (overreachCounts.get(word) ?? 0) + matches);
+      }
       console.log(
         `  [${i + 1}] ${copyCheck.copied ? "⚠️逐字/近逐字照搬" : "✅已改写"} factIds=[${line.factIds.join(", ")}]`
       );
@@ -177,6 +201,11 @@ async function main() {
     for (const line of material.resumeLines) {
       console.log(line.text);
     }
+  }
+
+  console.log(`\n========== 越界用词统计（全 ${repeats} 轮合计, prompt=${variant}）==========`);
+  for (const word of OVERREACH_WORDS) {
+    console.log(`「${word}」: ${overreachCounts.get(word) ?? 0} 次`);
   }
 
   if (roundUsedFactIds.length > 1) {
