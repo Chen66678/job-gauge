@@ -9,10 +9,13 @@
 // 跑法：DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/material-rewrite-live.ts [jobId前缀] [重复次数]
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createLlmClient } from "../../src/domain/llmClient";
 import { draftApplicationMaterial } from "../../src/domain/materialDrafting";
 import type { ProfileFact, JobPosting, ScoreResult, UserProfile } from "../../src/types";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 function sanitize(s: string): string {
   return s.replace(/sk-[A-Za-z0-9._-]+/g, "[REDACTED_KEY]");
@@ -38,16 +41,29 @@ function loadRealState(): RealCoreState {
   return { factLibrary: raw.factLibrary ?? [], jobs: raw.jobs ?? [] };
 }
 
-function buildProfile(facts: ProfileFact[]): UserProfile {
+function buildProfile(facts: ProfileFact[], resumeText: string): UserProfile {
   return {
     id: "real-user",
     displayName: "",
     headline: "",
     targetRoles: [],
     targetCities: [],
-    resumeText: "",
+    resumeText,
     facts
   };
+}
+
+// 厚度地板以原简历为基准（D032 §三：一页不得变半页/两页可精简成一页/本就精简的不得再砍），
+// 不是事实库——按岗位相关性筛事实是产品的核心价值（D005），不该被算作"变薄"。
+const RESUME_TEXT_PATH = join(__dirname, "_private", "resume.txt");
+
+function loadResumeText(): string {
+  if (!existsSync(RESUME_TEXT_PATH)) {
+    console.log(`未找到原简历文本: ${RESUME_TEXT_PATH}`);
+    console.log("请先放一份原简历到 scripts/eval/_private/resume.txt，再重跑本脚本。");
+    process.exit(0);
+  }
+  return readFileSync(RESUME_TEXT_PATH, "utf8");
 }
 
 // 简单的"逐字复制粘贴"检测：resumeLine.text 是否原样等于（或几乎等于）某条 fact.value 的整段。
@@ -82,6 +98,10 @@ async function main() {
   }
   console.log(`真实事实库: 共 ${state.factLibrary.length} 条, confirmed ${confirmedFacts.length} 条\n`);
 
+  const resumeText = loadResumeText();
+  const resumeTextChars = resumeText.length;
+  console.log(`原简历字符数(厚度地板基准): ${resumeTextChars}\n`);
+
   const jobFilter = process.argv[2]?.trim();
   const repeats = Number(process.argv[3]) || 5;
 
@@ -95,8 +115,12 @@ async function main() {
   const target = candidateJobs[0];
   console.log(`目标岗位: ${target.job.id}\n(reqs=${target.job.requirements.length})\n`);
 
-  const profile = buildProfile(confirmedFacts);
+  const profile = buildProfile(confirmedFacts, resumeText);
   const scoreResult = target.evaluation!.score;
+
+  // 跨轮重合度：如果模型是按岗位相关性选事实（相关性由岗位+事实决定，不随机），
+  // 那么每轮选中的 factId 集合应该高度重合；重合度低说明是随机挑，不是有原则的筛选。
+  const roundUsedFactIds: Set<string>[] = [];
 
   for (let round = 1; round <= repeats; round++) {
     console.log(`\n========== 第 ${round}/${repeats} 次复测 ==========`);
@@ -129,15 +153,45 @@ async function main() {
         : `[红线告警] 出现库外 factId: ${JSON.stringify(fabricated)}`
     );
     console.log(`[改写质量信号] 逐字/近逐字照搬行数 = ${verbatimCount}/${material.resumeLines.length}`);
-    const factCharsById = new Map(confirmedFacts.map((f) => [f.id, f.value.length]));
-    const matchedFactChars = [...usedFactIds].reduce((sum, id) => sum + (factCharsById.get(id) ?? 0), 0);
-    const thicknessRatio = matchedFactChars > 0 ? resumeLineChars / matchedFactChars : NaN;
+
     console.log(
-      `[厚度比信号] resumeLines总字符=${resumeLineChars}, 命中事实总字符=${matchedFactChars}, 厚度比=${thicknessRatio.toFixed(2)}` +
-        (thicknessRatio < 0.3 ? " ⚠️低于 0.30 地板" : "")
+      `[事实使用信号] 用了 ${usedFactIds.size}/${confirmedFacts.length} 条 confirmed 事实: ${[...usedFactIds].sort().join(", ")}`
+    );
+    roundUsedFactIds.push(usedFactIds);
+
+    // 厚度地板以原简历字符数为分母（D032 §三三档均以原简历为基准），不是事实库总字符数：
+    // 按岗位相关性筛掉不相关事实是产品价值（D005 选择与强调），不该被算作"变薄"；
+    // 地板要防的是"筛完之后剩下的也没写开"，不是"筛掉了多少"。
+    const thicknessRatio = resumeTextChars > 0 ? resumeLineChars / resumeTextChars : NaN;
+    console.log(
+      `[厚度比信号] resumeLines总字符=${resumeLineChars}, 原简历总字符=${resumeTextChars}, 厚度比=${thicknessRatio.toFixed(2)}`
     );
     if (material.guardrailNotes.length > 0) {
       console.log(`guardrailNotes: ${JSON.stringify(material.guardrailNotes)}`);
+    }
+
+    // 完整产物：招呼语+全部 resumeLines 连成一份可通读的简历，不夹诊断标记。
+    console.log(`\n[完整产物 第${round}轮]`);
+    console.log(material.greeting);
+    console.log("");
+    for (const line of material.resumeLines) {
+      console.log(line.text);
+    }
+  }
+
+  if (roundUsedFactIds.length > 1) {
+    console.log(`\n========== 跨轮 factId 重合度 ==========`);
+    for (let i = 0; i < roundUsedFactIds.length; i++) {
+      for (let j = i + 1; j < roundUsedFactIds.length; j++) {
+        const a = roundUsedFactIds[i];
+        const b = roundUsedFactIds[j];
+        const intersection = [...a].filter((id) => b.has(id));
+        const union = new Set([...a, ...b]);
+        const jaccard = union.size > 0 ? intersection.length / union.size : NaN;
+        console.log(
+          `第${i + 1}轮 ∩ 第${j + 1}轮: 交集=${intersection.length}, 并集=${union.size}, Jaccard=${jaccard.toFixed(2)}`
+        );
+      }
     }
   }
 }
