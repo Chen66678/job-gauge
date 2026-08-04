@@ -31,6 +31,7 @@ type MockJob = {
   workAddress: string | null
   sourceUrl: string | null
   evaluationError: string | null
+  evaluationStale: boolean
   jdText: string
   salaryK: [number, number]
 }
@@ -66,6 +67,7 @@ type CoreState = {
       }
     } | null
     evaluationError: string | null
+    evaluationStale?: boolean
     followUps: Array<{
       id: string
       requirementId: string
@@ -89,6 +91,8 @@ declare global {
       setJobPinned: (jobId: string, pinned: boolean) => Promise<CoreApiResult<void>>
       onStateChanged: (listener: (state: CoreState) => void) => () => void
       reevaluateJob: (jobId: string) => Promise<CoreApiResult<unknown>>
+      getReevaluationPreview: (scope: 'recent' | 'stale') => Promise<CoreApiResult<{ jobCount: number; modelCallCount: number }>>
+      reevaluateJobs: (scope: 'recent' | 'stale') => Promise<CoreApiResult<unknown>>
       evaluateJobFromJd: (input: {
         jdText: string
         jobBase: {
@@ -151,11 +155,11 @@ export function getFollowUpBadge(
 
 function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
   const evaluation = record.evaluation
-  const score = evaluation && !evaluation.vetoed ? evaluation.score.total : null
+  const score = record.evaluationStale ? null : evaluation && !evaluation.vetoed ? evaluation.score.total : null
   const scoreResult = evaluation && !evaluation.vetoed ? evaluation.score : null
   const strategy = scoreResult?.strategy
   const strategyClass = strategy === 'personalize' ? 'recommend' : strategy === 'generic_apply' ? 'suggest' : strategy === 'skip' ? 'skip' : 'consider'
-  const scoreTier = evaluation === null && record.evaluationError === null
+  const scoreTier = record.evaluationStale ? 'unevaluated' : evaluation === null && record.evaluationError === null
     ? 'pending'
     : record.evaluationError ? 'low' : score === null ? (evaluation ? 'low' : 'unevaluated') : score >= 80 ? 'high' : score >= 70 ? 'mid' : 'low'
   const requirements = record.job.requirements
@@ -172,7 +176,7 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
     gaps: scoreResult?.gaps ?? [],
     score,
     scoreTier,
-    strategyLabel: record.evaluationError ? '评估失败' : (scoreResult?.strategyLabel ?? '尚未评估'),
+    strategyLabel: record.evaluationStale ? '评分已过期' : record.evaluationError ? '评估失败' : (scoreResult?.strategyLabel ?? '尚未评估'),
     strategyClass,
     pinned: record.job.pinned,
     skills: requirements.map(requirement => {
@@ -188,13 +192,15 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
     workAddress: record.job.workAddress,
     sourceUrl: record.job.sourceUrl,
     evaluationError: record.evaluationError,
+    evaluationStale: record.evaluationStale ?? false,
     jdText: record.job.jdText,
     salaryK: record.job.salaryK
   }
 }
 
 // ─── Score Number ─────────────────────────────────────────────────
-function ScoreNum({ score }: { score: number | null }) {
+function ScoreNum({ score, stale }: { score: number | null; stale?: boolean }) {
+  if (stale) return <div className="score-num stale" aria-label="评分已过期">过期</div>
   if (score === null) return <div className="score-num empty">—</div>
   const tier = score >= 80 ? 'high' : score >= 70 ? 'medium' : score >= 60 ? 'fair' : 'low'
   return <div className={`score-num ${tier}`}>{score}</div>
@@ -412,7 +418,7 @@ function JobRow({
               <span className="failure-icon" aria-label="评估失败">!</span>
               <button type="button" onClick={event => { event.stopPropagation(); onRetry?.(job.id) }}>重试</button>
             </div>
-          ) : job.score !== null || job.scoreTier === 'unevaluated' ? <ScoreNum score={job.score} /> : (
+          ) : job.score !== null || job.scoreTier === 'unevaluated' ? <ScoreNum score={job.score} stale={job.evaluationStale} /> : (
             <div className="score-pending">
             {job.scoreTier === 'pending' && <div className="spinner" />}
             {job.scoreTier === 'queued' && (
@@ -429,6 +435,7 @@ function JobRow({
 
         <div className="r1-badge">
           <StrategyBadge job={job} />
+          {job.evaluationStale && <span className="badge b-stale">评分已过期</span>}
           {followUpBadge && (
             <span className={`badge ${followUpBadge.className}`}>
               {reevaluating && <span className="spinner" />}
@@ -518,8 +525,30 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   const [error, setError] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>('1')
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'salary'>('score')
+  const [stalePreview, setStalePreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
+  const [batchReevaluating, setBatchReevaluating] = useState(false)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const reevaluationPendingSeenRef = useRef<Set<string>>(new Set())
+
+  const loadStalePreview = useCallback(() => {
+    const previewApi = window.coreApi as Partial<Pick<Window['coreApi'], 'getReevaluationPreview'>>
+    if (!previewApi.getReevaluationPreview) return
+    previewApi.getReevaluationPreview('stale')
+      .then(unwrap)
+      .then(setStalePreview)
+      .catch(reason => setError(errorText(reason)))
+  }, [])
+
+  const handleReevaluateRemaining = useCallback(() => {
+    if (!stalePreview || stalePreview.jobCount === 0) return
+    if (!window.confirm(`将重评剩下 ${stalePreview.jobCount} 条岗位，预计消耗 ${stalePreview.modelCallCount} 次模型调用。继续吗？`)) return
+    setBatchReevaluating(true)
+    window.coreApi.reevaluateJobs('stale')
+      .then(unwrap)
+      .then(loadStalePreview)
+      .catch(reason => setError(errorText(reason)))
+      .finally(() => setBatchReevaluating(false))
+  }, [loadStalePreview, stalePreview])
 
   useEffect(() => {
     const completedSnapshots = [...reevaluateSnapshots.entries()].filter(([jobId]) => completedReevaluationJobIds.has(jobId))
@@ -551,6 +580,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
         setJobs(state.jobs.map(toDisplayJob))
         setRecords(state.jobs)
         setFactLibrary(state.factLibrary)
+        loadStalePreview()
         setLoading(false)
       })
       .catch(reason => {
@@ -565,6 +595,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
       setJobs(nextJobs)
       setRecords(state.jobs)
       setFactLibrary(state.factLibrary)
+      loadStalePreview()
       setReevaluateSnapshots(currentSnapshots => {
         const completedIds = [...currentSnapshots.keys()].filter(jobId => {
           const nextJob = nextJobs.find(job => job.id === jobId)
@@ -583,7 +614,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
     })
 
     return () => { active = false; unsubscribe() }
-  }, [])
+  }, [loadStalePreview])
 
   const toggleExpand = useCallback((id: string) => {
     setExpandedId(prev => {
@@ -716,6 +747,13 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
 
       {/* Control bar */}
       <div className="control-bar">
+        <div>
+          {stalePreview && stalePreview.jobCount > 0 && (
+            <button type="button" className="stale-reevaluate-button" disabled={batchReevaluating} onClick={handleReevaluateRemaining}>
+              {batchReevaluating ? '正在重评…' : `把剩下 ${stalePreview.jobCount} 条也重评（预计 ${stalePreview.modelCallCount} 次模型调用）`}
+            </button>
+          )}
+        </div>
         <div className="control-bar-right">
           {evaluatingCount > 0 && (
             <>

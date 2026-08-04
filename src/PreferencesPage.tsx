@@ -47,6 +47,14 @@ export default function PreferencesPage({ onBack }: { onBack?: () => void }) {
   const save = async () => {
     setStatus('saving'); setError('')
     try {
+      const previewApi = api as Partial<Pick<WorkflowApi, 'getReevaluationPreview'>>
+      if (previewApi.getReevaluationPreview) {
+        const preview = unwrap(await previewApi.getReevaluationPreview('recent'))
+        if (preview.jobCount > 0 && !window.confirm(`保存偏好后将自动重评 ${preview.jobCount} 条岗位，预计消耗 ${preview.modelCallCount} 次模型调用。继续吗？`)) {
+          setStatus('editing')
+          return
+        }
+      }
       const savedPreferences = unwrap(await api.setPreferencesFromText({ acceptText: text, vetoText: text })) as { ruleSet: PreferenceRuleSet }
       editsLocked.current = true
       setEditablePreferences(toEditablePreferences(savedPreferences.ruleSet))

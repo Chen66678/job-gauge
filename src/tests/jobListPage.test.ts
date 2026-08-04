@@ -171,3 +171,27 @@ describe('JobListPage', () => {
     expect(screen.queryByText('行业知识', { selector: '.evidence-name' })).toBeNull()
   })
 })
+
+it('re-evaluates all stale jobs from the remaining-jobs entry', async () => {
+  const staleState = buildState(68)
+  ;(staleState.jobs[0] as { evaluationStale?: boolean }).evaluationStale = true
+  const reevaluateJobs = vi.fn(async () => undefined)
+  window.coreApi = {
+    getState: vi.fn(async () => staleState),
+    onStateChanged: vi.fn(() => () => undefined),
+    setJobPinned: vi.fn(),
+    reevaluateJob: vi.fn(),
+    reevaluateJobs,
+    getReevaluationPreview: vi.fn(async (scope: string) => scope === 'stale' && reevaluateJobs.mock.calls.length === 0 ? { jobCount: 1, modelCallCount: 1 } : { jobCount: 0, modelCallCount: 0 }),
+    evaluateJobFromJd: vi.fn(),
+  } as unknown as typeof window.coreApi
+  vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+  render(createElement(JobListPage))
+
+  await screen.findByRole('button', { name: /把剩下 1 条也重评/ })
+  expect(screen.getByLabelText('评分已过期')).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: /把剩下 1 条也重评/ }))
+  await waitFor(() => expect(reevaluateJobs).toHaveBeenCalledWith('stale'))
+  await waitFor(() => expect(screen.queryByRole('button', { name: /把剩下 1 条也重评/ })).toBeNull())
+})

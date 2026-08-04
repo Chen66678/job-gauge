@@ -524,7 +524,7 @@ describe("coreApi", () => {
     const api2 = createCoreApi({ client: createClient(), storage });
 
     expect(api2.getState().factLibrary).toEqual([{ ...fact, status: "confirmed" }]);
-    expect(api2.getState().preferences).toEqual(preferences);
+    expect(api2.getState().preferences).toEqual({ ...preferences, autoReevaluateRecentCount: 30 });
   });
 
   it("draftMaterial 走真实生成路径，对已评估未否决的岗位返回非 blocked 材料", async () => {
@@ -569,6 +569,8 @@ describe("coreApi", () => {
       evaluationError: null,
       followUps: [],
       material: buildMaterial(),
+      collectedAt: new Date().toISOString(),
+      evaluationStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -612,6 +614,8 @@ describe("coreApi", () => {
       evaluationError: null,
       followUps: [],
       material: buildMaterial(),
+      collectedAt: new Date().toISOString(),
+      evaluationStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -659,6 +663,8 @@ describe("coreApi", () => {
       evaluationError: null,
       followUps: [],
       material,
+      collectedAt: new Date().toISOString(),
+      evaluationStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -891,5 +897,55 @@ describe("reevaluateJob", () => {
     const stored = api.getState().jobs.find((item) => item.job.id === record.job.id);
     expect(stored?.job.pinned).toBe(true);
     expect(stored?.evaluation).toEqual({ vetoed: false, score: buildScoredResult(80, "personalize") });
+  });
+});
+
+describe("automatic reevaluation scope", () => {
+  it("preserves collectedAt when the same job is collected again", async () => {
+    const api = createCoreApi({ client: createClient(), storage: new MemoryStorage() });
+    const input = {
+      jdText: "要求 React 组件开发。",
+      jobBase: { title: "前端工程师", company: "样例科技", city: "上海", salaryK: [20, 30] as [number, number], companyTags: [] }
+    };
+
+    await api.evaluateJobFromJd(input);
+    const firstCollectedAt = api.getState().jobs[0].collectedAt;
+    await api.evaluateJobFromJd(input);
+
+    expect(api.getState().jobs[0].collectedAt).toBe(firstCollectedAt);
+  });
+
+  it("always includes pinned jobs, and marks non-recent jobs stale", async () => {
+    const storage = new MemoryStorage();
+    const prefs = { ...buildPreferences(), autoReevaluateRecentCount: 1 };
+    const jobRecord = (id: string, collectedAt: string, pinned: boolean): CoreJobRecord => ({
+      job: {
+        id, title: id, company: "样例科技", city: "上海", salaryK: [20, 30], companyTags: [], jdText: "要求 React 组件开发。",
+        requirements: [buildRequirement()], risks: [], reviewFlags: [], pinned, workAddress: null, sourceUrl: null
+      },
+      evaluation: { vetoed: false, score: buildScoreResult() }, evaluationError: null, followUps: [], material: null,
+      collectedAt, evaluationStale: false, updatedAt: collectedAt
+    });
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-08-04T00:00:00.000Z",
+      factLibrary: [],
+      preferences: prefs,
+      jobs: [
+        jobRecord("old", "2026-08-01T00:00:00.000Z", false),
+        jobRecord("pinned", "2026-08-02T00:00:00.000Z", true),
+        jobRecord("recent", "2026-08-03T00:00:00.000Z", false)
+      ]
+    }));
+    orchestrationMocks.ingestResume.mockResolvedValueOnce([]);
+    orchestrationMocks.evaluateJob.mockResolvedValue({ vetoed: false, score: buildScoredResult(88, "personalize") });
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.ingestResume({ kind: "text", resumeText: "更新简历" });
+
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalledTimes(2);
+    expect(api.getState().jobs.find((record) => record.job.id === "pinned")?.evaluationStale).toBe(false);
+    expect(api.getState().jobs.find((record) => record.job.id === "recent")?.evaluationStale).toBe(false);
+    expect(api.getState().jobs.find((record) => record.job.id === "old")?.evaluationStale).toBe(true);
   });
 });

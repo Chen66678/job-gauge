@@ -1,5 +1,5 @@
 import type { FactStatus, MaterialPreview, ProfileFact, ScoreResult, UserProfile } from "../types";
-import type { BatchDiagnosis, CoreJobRecord, CorePreferences, CoreState } from "./coreState";
+import { normalizeAutoReevaluateRecentCount, type BatchDiagnosis, type CoreJobRecord, type CorePreferences, type CoreState } from "./coreState";
 import {
   clearCoreState,
   clearFactLibrary as clearCoreFactLibrary,
@@ -33,6 +33,7 @@ import {
 } from "./orchestration";
 import type { LocalStorageLike } from "./storage";
 import { redactSecretValues } from "./workbenchRepository";
+import { findVetoHit } from "./preferenceParsing";
 
 interface BatchDiagnosisEnvelope {
   patternSummary?: unknown;
@@ -41,6 +42,11 @@ interface BatchDiagnosisEnvelope {
 }
 
 type ScoredEvaluation = { vetoed: false; score: ScoreResult };
+export type ReevaluationScope = "recent" | "stale";
+export interface ReevaluationPreview {
+  jobCount: number;
+  modelCallCount: number;
+}
 
 const BATCH_DIAGNOSIS_SYSTEM_PROMPT = [
   "You analyze a batch of scored job recommendations and return json.",
@@ -60,6 +66,9 @@ export interface CoreApi {
   setFactStatus(factId: string, status: FactStatus): void;
   setFactStatusBatch(updates: { factId: string; status: FactStatus }[]): void;
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
+  setAutoReevaluateRecentCount(count: number): void;
+  getReevaluationPreview(scope: ReevaluationScope): ReevaluationPreview;
+  reevaluateJobs(scope: ReevaluationScope): Promise<CoreJobRecord[]>;
   evaluateJobFromJd(input: {
     jdText: string;
     jobBase: {
@@ -143,6 +152,85 @@ export function createCoreApi(deps: {
     };
   }
 
+  function getRecentReevaluationRecords(): CoreJobRecord[] {
+    const count = normalizeAutoReevaluateRecentCount(state.preferences?.autoReevaluateRecentCount);
+    const recentNonPinned = state.jobs
+      .filter((record) => !record.job.pinned)
+      .sort((left, right) => right.collectedAt.localeCompare(left.collectedAt))
+      .slice(0, count);
+    const pinned = state.jobs.filter((record) => record.job.pinned);
+    return [...new Map([...pinned, ...recentNonPinned].map((record) => [record.job.id, record])).values()];
+  }
+
+  function getRecordsForReevaluation(scope: ReevaluationScope): CoreJobRecord[] {
+    return scope === "recent"
+      ? getRecentReevaluationRecords()
+      : state.jobs.filter((record) => record.evaluationStale);
+  }
+
+  function getReevaluationPreview(scope: ReevaluationScope): ReevaluationPreview {
+    const records = getRecordsForReevaluation(scope);
+    return {
+      jobCount: records.length,
+      modelCallCount: records.filter((record) => (
+        record.job.requirements.length > 0 && !findVetoHit(record.job, state.preferences?.hardVeto ?? { rules: [] })
+      )).length
+    };
+  }
+
+  function markJobsOutsideRecentScopeStale(): void {
+    const recentIds = new Set(getRecentReevaluationRecords().map((record) => record.job.id));
+    let changed = false;
+    const jobs = state.jobs.map((record) => {
+      const evaluationStale = !recentIds.has(record.job.id);
+      if (record.evaluationStale === evaluationStale) return record;
+      changed = true;
+      return { ...record, evaluationStale };
+    });
+    if (changed) persist({ ...state, jobs });
+  }
+
+  async function automaticallyReevaluateRecentJobs(): Promise<void> {
+    markJobsOutsideRecentScopeStale();
+    await Promise.all(getRecentReevaluationRecords().map((record) => reevaluateRecord(record.job.id)));
+  }
+
+  async function reevaluateRecord(jobId: string): Promise<CoreJobRecord | null> {
+    const record = getJobRecord(state, jobId);
+    if (!record || record.job.requirements.length === 0) {
+      if (record?.evaluationStale) persist(upsertJobRecord(state, { ...record, evaluationStale: false }));
+      return record;
+    }
+
+    try {
+      const evaluation = await evaluateJob({
+        profile: buildWorkingProfile(),
+        job: record.job,
+        client: deps.client,
+        riskSensitivity: state.preferences?.riskSensitivity,
+        hardVeto: state.preferences?.hardVeto
+      });
+      const fresh = getJobRecord(state, jobId) ?? record;
+      persist(upsertJobRecord(state, {
+        ...fresh,
+        evaluation: evaluation.vetoed
+          ? { vetoed: true, vetoRuleId: evaluation.vetoRule.id, vetoRuleLabel: evaluation.vetoRule.label }
+          : { vetoed: false, score: evaluation.score },
+        evaluationError: null,
+        evaluationStale: false
+      }));
+      return getJobRecord(state, jobId);
+    } catch (error) {
+      const fresh = getJobRecord(state, jobId) ?? record;
+      persist(upsertJobRecord(state, {
+        ...fresh,
+        evaluationError: error instanceof Error ? error.message : String(error),
+        evaluationStale: true
+      }));
+      return getJobRecord(state, jobId);
+    }
+  }
+
   return {
     getState(): CoreState {
       return state;
@@ -179,6 +267,7 @@ export function createCoreApi(deps: {
       });
       const confirmedFacts = preserveUserDecidedStatus(facts);
       persist(upsertFacts(state, confirmedFacts));
+      await automaticallyReevaluateRecentJobs();
       return confirmedFacts;
     },
 
@@ -199,10 +288,33 @@ export function createCoreApi(deps: {
       const preferences: CorePreferences = {
         ruleSet: parsed.preferences,
         riskSensitivity: parsed.riskSensitivity,
-        hardVeto: parsed.hardVeto
+        hardVeto: parsed.hardVeto,
+        autoReevaluateRecentCount: normalizeAutoReevaluateRecentCount(state.preferences?.autoReevaluateRecentCount)
       };
       persist(setCorePreferences(state, preferences));
+      await automaticallyReevaluateRecentJobs();
       return preferences;
+    },
+
+    setAutoReevaluateRecentCount(count) {
+      const preferences = state.preferences;
+      if (!preferences) return;
+      persist(setCorePreferences(state, {
+        ...preferences,
+        autoReevaluateRecentCount: normalizeAutoReevaluateRecentCount(count)
+      }));
+    },
+
+    getReevaluationPreview,
+
+    async reevaluateJobs(scope) {
+      const records = getRecordsForReevaluation(scope);
+      const results: CoreJobRecord[] = [];
+      for (const record of records) {
+        const updated = await reevaluateRecord(record.job.id);
+        if (updated) results.push(updated);
+      }
+      return results;
     },
 
     evaluateJobFromJd(input) {
@@ -231,7 +343,9 @@ export function createCoreApi(deps: {
         evaluationError: null,
         followUps: previous?.followUps ?? [],
         material: previous?.material ?? null,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        collectedAt: previous?.collectedAt ?? new Date().toISOString(),
+        evaluationStale: false
       };
       persist(upsertJobRecord(state, baseRecord));
 
@@ -281,7 +395,9 @@ export function createCoreApi(deps: {
             evaluationError: null,
             followUps: [],
             material: null,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+            collectedAt: previous?.collectedAt ?? new Date().toISOString(),
+            evaluationStale: false
           };
 
           persist(upsertJobRecord(state, record));
@@ -297,7 +413,9 @@ export function createCoreApi(deps: {
                 evaluationError,
                 followUps: [],
                 material: null,
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                collectedAt: new Date().toISOString(),
+                evaluationStale: false
               };
           persist(upsertJobRecord(state, failedRecord));
           return getJobRecord(state, baseJob.id) ?? failedRecord;
@@ -332,49 +450,7 @@ export function createCoreApi(deps: {
     },
 
     async reevaluateJob(jobId) {
-      // 事实/确认状态变更后，用当前 confirmed 事实重跑该岗位评分（修复评分被冻结的缺口）。
-      const record = getJobRecord(state, jobId);
-      if (!record || record.job.requirements.length === 0) {
-        return record;
-      }
-
-      try {
-        const evaluation = await evaluateJob({
-          profile: buildWorkingProfile(),
-          job: record.job,
-          client: deps.client,
-          riskSensitivity: state.preferences?.riskSensitivity,
-          hardVeto: state.preferences?.hardVeto
-        });
-
-        const fresh = getJobRecord(state, jobId) ?? record;
-        persist(
-          upsertJobRecord(state, {
-            ...fresh,
-            evaluation: evaluation.vetoed
-              ? {
-                  vetoed: true,
-                  vetoRuleId: evaluation.vetoRule.id,
-                  vetoRuleLabel: evaluation.vetoRule.label
-                }
-              : {
-                  vetoed: false,
-                  score: evaluation.score
-                },
-            evaluationError: null
-          })
-        );
-        return getJobRecord(state, jobId);
-      } catch (error) {
-        const fresh = getJobRecord(state, jobId) ?? record;
-        persist(
-          upsertJobRecord(state, {
-            ...fresh,
-            evaluationError: error instanceof Error ? error.message : String(error)
-          })
-        );
-        return getJobRecord(state, jobId);
-      }
+      return reevaluateRecord(jobId);
     },
 
     async buildFollowUps(jobId) {

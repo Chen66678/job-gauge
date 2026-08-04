@@ -28,6 +28,7 @@ export interface CorePreferences {
   ruleSet: PreferenceRuleSet;
   riskSensitivity: RiskSensitivity;
   hardVeto: HardVetoRules;
+  autoReevaluateRecentCount?: number;
 }
 
 export interface CoreJobRecord {
@@ -37,6 +38,10 @@ export interface CoreJobRecord {
   followUps: FollowUpQuestion[];
   material: MaterialPreview | null;
   preScreenResult?: KeywordPreScreenResult;
+  /** 首次采集时间；重采同一岗位时必须保留。 */
+  collectedAt: string;
+  /** 偏好或简历更新后，原评分不能再作为当前评分展示。 */
+  evaluationStale: boolean;
   updatedAt: string;
 }
 
@@ -223,7 +228,8 @@ export function loadCoreState(storage: LocalStorageLike): CoreState {
   if (!raw) {
     return createEmptyCoreState();
   }
-  return parseCoreState(raw) ?? createEmptyCoreState();
+  const parsed = parseCoreState(raw);
+  return parsed ? normalizeCoreState(parsed) : createEmptyCoreState();
 }
 
 export function saveCoreState(storage: LocalStorageLike, state: CoreState): void {
@@ -271,7 +277,8 @@ function isCorePreferences(value: unknown): value is CorePreferences {
     isRecord(value) &&
     isPreferenceRuleSet(value.ruleSet) &&
     isRiskSensitivity(value.riskSensitivity) &&
-    isHardVetoRules(value.hardVeto)
+    isHardVetoRules(value.hardVeto) &&
+    (value.autoReevaluateRecentCount === undefined || isAutoReevaluateRecentCount(value.autoReevaluateRecentCount))
   );
 }
 
@@ -285,8 +292,35 @@ function isCoreJobRecord(value: unknown): value is CoreJobRecord {
     value.followUps.every(isFollowUpQuestion) &&
     (value.material === null || value.material === undefined || isMaterialPreview(value.material)) &&
     (value.preScreenResult === null || value.preScreenResult === undefined || isKeywordPreScreenResult(value.preScreenResult)) &&
+    (value.collectedAt === undefined || typeof value.collectedAt === "string") &&
+    (value.evaluationStale === undefined || typeof value.evaluationStale === "boolean") &&
     typeof value.updatedAt === "string"
   );
+}
+
+function normalizeCoreState(state: CoreState): CoreState {
+  return {
+    ...state,
+    preferences: state.preferences
+      ? {
+          ...state.preferences,
+          autoReevaluateRecentCount: normalizeAutoReevaluateRecentCount(state.preferences.autoReevaluateRecentCount)
+        }
+      : null,
+    jobs: state.jobs.map((record) => ({
+      ...record,
+      collectedAt: record.collectedAt ?? record.updatedAt,
+      evaluationStale: record.evaluationStale ?? false
+    }))
+  };
+}
+
+function isAutoReevaluateRecentCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+export function normalizeAutoReevaluateRecentCount(value: unknown): number {
+  return isAutoReevaluateRecentCount(value) ? value : 30;
 }
 
 function isCoreEvaluation(value: unknown): value is CoreEvaluation {
