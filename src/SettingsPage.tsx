@@ -21,8 +21,13 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
   const [editingFactId, setEditingFactId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [clearConfirming, setClearConfirming] = useState(false)
+  const [autoReevaluateCount, setAutoReevaluateCount] = useState(30)
+  const [reevaluationPreview, setReevaluationPreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
 
-  const refreshFacts = () => api.getState().then(state => setFacts(state.factLibrary ?? []))
+  const refreshFacts = () => api.getState().then(state => {
+    setFacts(state.factLibrary ?? [])
+    setAutoReevaluateCount(state.preferences?.autoReevaluateRecentCount ?? 30)
+  })
 
   useEffect(() => {
     void api.getLocalApiToken().then(result => setLocalApiToken(result.token))
@@ -82,6 +87,19 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
     window.setTimeout(() => setCopyStatus('idle'), 1500)
   }
 
+  const previewRecentReevaluation = async () => {
+    try { setReevaluationPreview(unwrap(await api.getReevaluationPreview('recent'))) } catch (reason) { setFactError(formatError(reason)) }
+  }
+
+  const saveAutoReevaluateCount = async () => {
+    const count = Math.max(0, Math.floor(autoReevaluateCount || 0))
+    try {
+      unwrap(await api.setAutoReevaluateRecentCount(count))
+      setAutoReevaluateCount(count)
+      await previewRecentReevaluation()
+    } catch (reason) { setFactError(formatError(reason)) }
+  }
+
   return <div style={{ padding: 40, color: 'var(--text-secondary)' }}>
     <h1 style={{ marginBottom: 16 }}>设置</h1>
     <p style={{ marginBottom: 20 }}>管理求职偏好和安装引导。</p>
@@ -89,6 +107,15 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
     <button style={{ marginLeft: 12 }} onClick={onOpenOnboarding}>重新打开安装引导</button>
     <button style={{ marginLeft: 12 }} disabled={clearing} onClick={() => void clearKey()}>{clearing ? '清除中…' : '清除本地 API Key'}</button>
     {message && <p style={{ marginTop: 12 }}>{message}</p>}
+
+    <div style={{ marginTop: 24, padding: 16, border: '1px solid var(--border-hairline)', borderRadius: 8 }}>
+      <h2 style={{ marginBottom: 8 }}>自动重评范围</h2>
+      <p style={{ marginBottom: 10 }}>简历或偏好保存后，自动重评最近采集的 N 条岗位；置顶岗位始终会重评。范围外岗位会标记为评分已过期。</p>
+      <label>自动重评最近 <input aria-label="自动重评最近 N 条" type="number" min="0" value={autoReevaluateCount} onChange={event => setAutoReevaluateCount(Number(event.target.value))} style={{ width: 72, margin: '0 6px' }} /> 条</label>
+      <button style={{ marginLeft: 12 }} onClick={() => void saveAutoReevaluateCount()}>保存</button>
+      <button style={{ marginLeft: 8 }} onClick={() => void previewRecentReevaluation()}>查看调用预估</button>
+      {reevaluationPreview && <p style={{ marginTop: 10, fontSize: 13 }}>下次自动重评会处理 {reevaluationPreview.jobCount} 条岗位，预计消耗 {reevaluationPreview.modelCallCount} 次模型调用。</p>}
+    </div>
 
     <div style={{ marginTop: 24 }}>
       <p style={{ marginBottom: 8 }}>本地插件配对 token</p>

@@ -81,6 +81,11 @@ export default function ProfilePage() {
   }
 
   const uploadResume = async (input: ResumeInput) => {
+    const previewApi = api as Partial<Pick<WorkflowApi, 'getReevaluationPreview'>>
+    if (previewApi.getReevaluationPreview) {
+      const preview = unwrap(await previewApi.getReevaluationPreview('recent'))
+      if (preview.jobCount > 0 && !window.confirm(`保存简历后将自动重评 ${preview.jobCount} 条岗位，预计消耗 ${preview.modelCallCount} 次模型调用。继续吗？`)) return
+    }
     setParsing(true)
     setParseError(null)
     setResumeFollowUpCount(0)

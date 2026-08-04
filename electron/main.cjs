@@ -224,6 +224,9 @@ function registerCoreApiHandlers(core) {
   invoke("setFactStatus", (factId, status) => core.api.setFactStatus(factId, status));
   invoke("setFactStatusBatch", (updates) => core.api.setFactStatusBatch(updates));
   invoke("setPreferencesFromText", (input) => core.api.setPreferencesFromText(input));
+  invoke("setAutoReevaluateRecentCount", (count) => core.api.setAutoReevaluateRecentCount(count));
+  invoke("getReevaluationPreview", (scope) => core.api.getReevaluationPreview(scope));
+  invoke("reevaluateJobs", (scope) => core.api.reevaluateJobs(scope));
   invoke("evaluateJobFromJd", (input) => core.api.evaluateJobFromJd(input));
   invoke("setJobPinned", (jobId, pinned) => core.api.setJobPinned(jobId, pinned));
   invoke("buildResumeFollowUps", () => core.api.buildResumeFollowUps());

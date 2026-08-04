@@ -115,6 +115,8 @@ function buildJobRecord(): CoreJobRecord {
     evaluationError: null,
     followUps: [],
     material: null,
+    collectedAt: "2026-07-07T00:00:00.000Z",
+    evaluationStale: false,
     updatedAt: "2026-07-07T00:00:00.000Z"
   };
 }
@@ -201,7 +203,7 @@ describe("coreState", () => {
 
     expect(storage.getItem(CORE_STATE_STORAGE_KEY)).toContain("\"schemaVersion\":1");
     expect(loaded.factLibrary).toEqual(state.factLibrary);
-    expect(loaded.preferences).toEqual(state.preferences);
+    expect(loaded.preferences).toEqual({ ...state.preferences!, autoReevaluateRecentCount: 30 });
     expect(loaded.jobs).toHaveLength(1);
     expect(empty.factLibrary).toEqual([]);
     expect(empty.preferences).toBeNull();

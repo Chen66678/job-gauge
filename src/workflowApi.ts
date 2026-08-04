@@ -11,7 +11,7 @@ export type FollowUpQuestion = {
 }
 
 export type WorkflowJob = {
-  job: { id: string; title: string; company: string; city: string; requirements?: JobRequirement[] }
+  job: { id: string; title: string; company: string; city: string; requirements?: JobRequirement[]; pinned?: boolean }
   evaluation: {
     vetoed: true
     vetoRuleLabel: string
@@ -26,6 +26,8 @@ export type WorkflowJob = {
     }
   } | null
   evaluationError: string | null
+  collectedAt?: string
+  evaluationStale?: boolean
   followUps: FollowUpQuestion[]
   material: MaterialPreview | null
 }
@@ -33,7 +35,10 @@ export type WorkflowJob = {
 export type WorkflowState = {
   factLibrary: ProfileFact[]
   jobs: WorkflowJob[]
+  preferences?: { autoReevaluateRecentCount?: number } | null
 }
+
+export type ReevaluationPreview = { jobCount: number; modelCallCount: number }
 
 export type WorkflowApi = {
   getState: () => Promise<WorkflowState>
@@ -42,6 +47,9 @@ export type WorkflowApi = {
   setFactStatus: (factId: string, status: FactStatus) => Promise<CoreApiResult<void>>
   setFactStatusBatch: (updates: { factId: string; status: FactStatus }[]) => Promise<CoreApiResult<void>>
   setPreferencesFromText: (input: { acceptText: string; vetoText: string }) => Promise<CoreApiResult<unknown>>
+  setAutoReevaluateRecentCount: (count: number) => Promise<CoreApiResult<void>>
+  getReevaluationPreview: (scope: 'recent' | 'stale') => Promise<CoreApiResult<ReevaluationPreview>>
+  reevaluateJobs: (scope: 'recent' | 'stale') => Promise<CoreApiResult<WorkflowJob[]>>
   evaluateJobFromJd: (input: {
     jdText: string
     jobBase: { title: string; company: string; city: string; salaryK: [number, number]; companyTags: string[] }
