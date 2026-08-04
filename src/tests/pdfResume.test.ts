@@ -41,6 +41,12 @@ describe('pdfResume', () => {
     expect(hasUsablePdfText('产品经理负责招聘平台的用户增长、需求分析、跨团队协作和数据复盘，持续优化核心转化链路，并制定实验方案推动投递转化与运营效率提升。')).toBe(true)
   })
 
+  it('expands all PDF ligature code points without introducing spaces', () => {
+    expect(normalizePdfText('oﬀer ofﬁce Workﬂow eﬃcient baﬄe ﬅate ﬆop')).toBe(
+      'offer office Workflow efficient baffle state stop',
+    )
+  })
+
   it('extracts a real text layer as clean text without rendering PDF pages', async () => {
     const page = createPage([
       { str: '张三', hasEOL: true },
