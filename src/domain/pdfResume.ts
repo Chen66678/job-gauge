@@ -19,6 +19,15 @@ export function isPdfFile(file: Pick<File, 'name' | 'type'>): boolean {
 export function normalizePdfText(text: string): string {
   return text
     .replace(/\u0000/g, '')
+    .replace(/[\uFB00-\uFB06]/g, character => ({
+      '\uFB00': 'ff',
+      '\uFB01': 'fi',
+      '\uFB02': 'fl',
+      '\uFB03': 'ffi',
+      '\uFB04': 'ffl',
+      '\uFB05': 'st',
+      '\uFB06': 'st',
+    })[character] ?? character)
     .replace(/[\t\f\v ]+\n/g, '\n')
     .replace(/\n[\t\f\v ]+/g, '\n')
     .replace(/[\t\f\v ]{2,}/g, ' ')
@@ -63,4 +72,3 @@ async function extractText(pdfDocument: PdfDocumentProxy): Promise<string> {
   }
   return pages.join('\n\n')
 }
-
