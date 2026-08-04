@@ -210,6 +210,32 @@ describe('CustomResumePage', () => {
     expect(screen.getByRole('button', { name: '已复制' })).not.toBeNull()
   })
 
+  it('reuses stored material without generating again, but allows an explicit regeneration', async () => {
+    const storedMaterial = {
+      status: 'ready' as const,
+      greeting: '已保存的开场白',
+      resumeLines: [{ text: '已保存的简历内容', factIds: ['fact-1'] }],
+      usedFacts: [{ factId: 'fact-1', label: '已确认项目', value: '项目原始事实内容', source: 'resume' }],
+      blockedFacts: [],
+      guardrailNotes: [],
+    }
+    const draftMaterial = vi.fn(async () => ({ ...storedMaterial, greeting: '重新生成的开场白' }))
+    window.coreApi = {
+      getState: vi.fn(async () => ({ jobs: [{ job: { id: 'job-stored', sourceUrl: null }, material: storedMaterial }] })),
+      draftMaterial,
+    } as unknown as typeof window.coreApi
+
+    render(createElement(CustomResumePage, { jobId: 'job-stored', onBack: vi.fn() }))
+
+    await screen.findByText('已保存的简历内容')
+    expect(draftMaterial).not.toHaveBeenCalled()
+    expect(screen.getByText('来源事实')).not.toBeNull()
+    expect(screen.getByText(/已确认项目：项目原始事实内容/)).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重新生成' }))
+    await screen.findByText('重新生成的开场白')
+    expect(draftMaterial).toHaveBeenCalledWith('job-stored')
+  })
+
   it('exports the rendered resume image through the existing renderer path', async () => {
     const draftMaterial = vi.fn(async () => ({
       status: 'ready' as const,
