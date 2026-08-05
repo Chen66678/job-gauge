@@ -1,4 +1,4 @@
-import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact } from './types'
+import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact, ProfileFactGroup } from './types'
 import type { CoreApiResult } from './coreApiResult'
 import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, SaveAndVerifyByokKeyResult } from './domain/byokKeyStore'
 
@@ -34,6 +34,7 @@ export type WorkflowJob = {
 
 export type WorkflowState = {
   factLibrary: ProfileFact[]
+  factGroups?: ProfileFactGroup[]
   jobs: WorkflowJob[]
   preferences?: { autoReevaluateRecentCount?: number } | null
 }
@@ -67,6 +68,7 @@ export type WorkflowApi = {
   addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
   clearFactLibrary: () => Promise<CoreApiResult<void>>
   deleteFact: (factId: string) => Promise<CoreApiResult<void>>
+  deleteFactGroup: (groupId: string) => Promise<CoreApiResult<void>>
   saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
   getByokKeyStatus: () => Promise<ByokKeyStatus>
   clearByokKey: () => Promise<ClearByokKeyResult>

@@ -3,6 +3,8 @@ import {
   CORE_STATE_STORAGE_KEY,
   clearCoreState,
   createEmptyCoreState,
+  deleteFact,
+  deleteFactGroup,
   getConfirmedFacts,
   getJobRecord,
   loadCoreState,
@@ -13,6 +15,7 @@ import {
   setFactStatus,
   setFactStatusBatch,
   setPreferences,
+  upsertFactGroups,
   upsertFacts,
   upsertJobRecord
 } from "../domain/coreState";
@@ -44,7 +47,9 @@ function buildFact(input: Partial<ProfileFact> & Pick<ProfileFact, "id" | "label
     sourceType: input.sourceType ?? "resume",
     sourceRef: input.sourceRef ?? "测试事实",
     status: input.status ?? "unconfirmed",
-    confidence: input.confidence ?? 0.9
+    confidence: input.confidence ?? 0.9,
+    groupId: input.groupId ?? null,
+    summary: input.summary ?? null
   };
 }
 
@@ -232,5 +237,44 @@ describe("coreState", () => {
     ]);
 
     expect(() => saveCoreState(storage, unsafe)).toThrow("Core state rejected sensitive/raw evidence fields");
+  });
+});
+
+describe("factGroups (D034 父子分组)", () => {
+  function buildGroupedState() {
+    let state = upsertFactGroups(createEmptyCoreState(), [
+      { id: "group-1", category: "经历", label: "样例公司 · 前端工程师 · 2022年1月-2023年6月" }
+    ]);
+    state = upsertFacts(state, [
+      buildFact({ id: "fact-1", label: "负责首页重构", value: "负责首页重构", status: "confirmed", groupId: "group-1" }),
+      buildFact({ id: "fact-2", label: "接口联调", value: "接口联调", status: "confirmed", groupId: "group-1" }),
+      buildFact({ id: "fact-3", label: "无关技能", value: "无关技能", status: "confirmed", groupId: null })
+    ]);
+    return state;
+  }
+
+  it("删父级：分组与其下全部子事实一并删除，其他事实不受影响（首席裁定一）", () => {
+    const state = buildGroupedState();
+    const next = deleteFactGroup(state, "group-1");
+
+    expect(next.factGroups).toEqual([]);
+    expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-3"]);
+  });
+
+  it("删单个子条：不动父级与兄弟事实（首席裁定二）", () => {
+    const state = buildGroupedState();
+    const next = deleteFact(state, "fact-1");
+
+    expect(next.factGroups).toEqual(state.factGroups);
+    expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-2", "fact-3"]);
+  });
+
+  it("子条全删空的父级仍保留在 factGroups 里，但 getConfirmedFacts 拿不到任何子条——不会被当作事实喂给生成", () => {
+    let state = buildGroupedState();
+    state = deleteFact(state, "fact-1");
+    state = deleteFact(state, "fact-2");
+
+    expect(state.factGroups.map((group) => group.id)).toEqual(["group-1"]);
+    expect(getConfirmedFacts(state).some((fact) => fact.groupId === "group-1")).toBe(false);
   });
 });

@@ -186,6 +186,7 @@ export default function ProfilePage() {
   }
 
   const facts = state?.factLibrary ?? []
+  const factGroupsById = new Map((state?.factGroups ?? []).map(group => [group.id, group] as const))
   const unconfirmedFacts = facts.filter(fact => fact.status === 'unconfirmed')
   const processedFacts = facts.filter(fact => fact.status !== 'unconfirmed')
   const groupedFacts = unconfirmedFacts.reduce<Record<string, ProfileFact[]>>((groups, fact) => {
@@ -200,11 +201,15 @@ export default function ProfilePage() {
   const factCard = (fact: ProfileFact, processed = false) => (
     <div className={`fact-card ${processed ? 'done-card is-processed' : ''}`} key={fact.id}>
       <div className="fact-main">
+        {fact.groupId && factGroupsById.get(fact.groupId) && (
+          <div className="fact-group-tag">{factGroupsById.get(fact.groupId)!.label}</div>
+        )}
         <div className="fact-top">
           <span className="fact-label">{fact.label}</span>
           <span className={`src-badge src-${fact.sourceType}`}>{sourceLabel(fact.sourceType)}</span>
           {fact.confidence < 0.7 && <span className="low-conf"><WarningIcon />提取可信度较低，请仔细确认</span>}
         </div>
+        {fact.summary && <div className="fact-summary">{fact.summary}</div>}
         <div className="fact-value">{fact.value}</div>
         <div className="fact-foot">
           <span className="source-ref"><InfoIcon />来源：{fact.sourceRef}</span><span className="edit-sep">·</span>

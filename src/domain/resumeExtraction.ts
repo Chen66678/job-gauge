@@ -40,7 +40,7 @@ const RESUME_EXTRACTION_SYSTEM_PROMPT = [
 ].join("\n");
 
 export async function extractFactsFromResume(input: ResumeExtractionInput): Promise<ProfileFact[]> {
-  const sourceRef = input.sourceRef?.trim() || defaultSourceRef();
+  const sourceRefBase = input.sourceRef?.trim() || defaultSourceRef();
   const raw = await input.client.completeText({
     system: RESUME_EXTRACTION_SYSTEM_PROMPT,
     user: buildTextUserPrompt(input.resumeText),
@@ -51,6 +51,8 @@ export async function extractFactsFromResume(input: ResumeExtractionInput): Prom
   if (!parsed) {
     return [];
   }
+
+  const ingestedAt = new Date().toISOString();
 
   return parsed.facts.flatMap((fact, index) => {
     const normalized = normalizeFactItem(fact);
@@ -64,9 +66,13 @@ export async function extractFactsFromResume(input: ResumeExtractionInput): Prom
         label: normalized.label,
         value: normalized.value,
         sourceType: "resume",
-        sourceRef,
+        // D034③：每条事实携带本次抽取时间 + 抽取序号，取代原先所有事实共享同一个 "resume_text" 常量，
+        // 使 AI 合并、临时建库优先级、逐行溯源都能定位到具体这一条。
+        sourceRef: `${sourceRefBase}#${ingestedAt}#${index + 1}`,
         status: "unconfirmed",
-        confidence: normalized.confidence
+        confidence: normalized.confidence,
+        groupId: null,
+        summary: null
       } satisfies ProfileFact
     ];
   });

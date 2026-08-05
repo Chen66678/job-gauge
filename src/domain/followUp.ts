@@ -241,9 +241,11 @@ export async function ingestFollowUpAnswers(input: {
         label,
         value,
         sourceType: "user_answer",
-        sourceRef: `反问:${question.question.slice(0, 20)}`,
+        sourceRef: `反问:${question.id}:${question.question.slice(0, 20)}`,
         status: "unconfirmed",
-        confidence: clampConfidence(item.confidence)
+        confidence: clampConfidence(item.confidence),
+        groupId: null,
+        summary: null
       } satisfies ProfileFact
     ];
   });

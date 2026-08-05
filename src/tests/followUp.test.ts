@@ -188,6 +188,8 @@ describe("generateResumeFollowUpQuestions", () => {
       sourceRef: "resume_text",
       status: "unconfirmed",
       confidence: 0.9,
+      groupId: null,
+      summary: null,
       ...overrides
     };
   }
@@ -287,9 +289,11 @@ describe("ingestFollowUpAnswers", () => {
         label: "React 后台项目",
         value: "用 React 做过后台管理系统页面开发",
         sourceType: "user_answer",
-        sourceRef: expect.stringMatching(/^反问:你有做过基于 React 的后台系统/),
+        sourceRef: expect.stringMatching(/^反问:.*你有做过基于 React 的后台系统/),
         status: "unconfirmed",
-        confidence: 0.91
+        confidence: 0.91,
+        groupId: null,
+        summary: null
       }
     ]);
   });
@@ -378,7 +382,9 @@ describe("ingestFollowUpAnswers", () => {
       sourceType: "user_answer",
       sourceRef: "test",
       status: "unconfirmed",
-      confidence: 0.9
+      confidence: 0.9,
+      groupId: null,
+      summary: null
     }];
     expect(getConfirmedFacts(state)).toEqual([]);
   });

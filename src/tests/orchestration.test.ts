@@ -56,7 +56,9 @@ function buildFact(input: Partial<ProfileFact> & Pick<ProfileFact, "id" | "label
     sourceType: input.sourceType ?? "resume",
     sourceRef: input.sourceRef ?? "测试事实",
     status: input.status ?? "confirmed",
-    confidence: input.confidence ?? 0.9
+    confidence: input.confidence ?? 0.9,
+    groupId: input.groupId ?? null,
+    summary: input.summary ?? null
   };
 }
 
@@ -136,9 +138,11 @@ describe("orchestration", () => {
         label: "React",
         value: "负责 React 组件开发",
         sourceType: "resume",
-        sourceRef: "resume_text",
+        sourceRef: expect.stringMatching(/^resume_text#/),
         status: "unconfirmed",
-        confidence: 0.92
+        confidence: 0.92,
+        groupId: null,
+        summary: null
       }
     ]);
   });
@@ -267,7 +271,9 @@ describe("orchestration", () => {
         sourceType: "user_answer",
         sourceRef: expect.stringMatching(/^反问:/),
         status: "unconfirmed",
-        confidence: 0.9
+        confidence: 0.9,
+        groupId: null,
+        summary: null
       }
     ]);
   });
@@ -428,7 +434,7 @@ describe("orchestration", () => {
           factId: "fact-resume-1-技能-react",
           label: "React",
           value: "负责 React 组件开发",
-          source: "简历 - resume_text"
+          source: expect.stringMatching(/^简历 - resume_text#/)
         }
       ],
       blockedFacts: [],

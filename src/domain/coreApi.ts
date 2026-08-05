@@ -5,6 +5,7 @@ import {
   clearFactLibrary as clearCoreFactLibrary,
   computeConfirmedFactsFingerprint,
   deleteFact as deleteCoreFactById,
+  deleteFactGroup as deleteCoreFactGroup,
   getConfirmedFacts,
   getJobRecord,
   loadCoreState,
@@ -98,6 +99,8 @@ export interface CoreApi {
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
   clearFactLibrary(): void;
   deleteFact(factId: string): Promise<void>;
+  /** 删父级：分组连同其下全部子事实一并删除（首席裁定）。 */
+  deleteFactGroup(groupId: string): Promise<void>;
   clear(): void;
 }
 
@@ -272,9 +275,11 @@ export function createCoreApi(deps: {
         label: category,
         value: content,
         sourceType: "manual",
-        sourceRef: "manual",
+        sourceRef: `manual:${new Date().toISOString()}`,
         status: "confirmed",
-        confidence: 1
+        confidence: 1,
+        groupId: null,
+        summary: null
       };
       persist(upsertFacts(state, [fact]));
       await automaticallyReevaluateAfterFactChange();
@@ -670,6 +675,11 @@ export function createCoreApi(deps: {
 
     async deleteFact(factId) {
       persist(deleteCoreFactById(state, factId));
+      await automaticallyReevaluateAfterFactChange();
+    },
+
+    async deleteFactGroup(groupId) {
+      persist(deleteCoreFactGroup(state, groupId));
       await automaticallyReevaluateAfterFactChange();
     },
 

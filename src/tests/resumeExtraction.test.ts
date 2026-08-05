@@ -57,9 +57,11 @@ describe("extractFactsFromResume", () => {
         label: "TypeScript",
         value: "使用 TypeScript 开发数据看板",
         sourceType: "resume",
-        sourceRef: "测试文本简历",
+        sourceRef: expect.stringMatching(/^测试文本简历#/),
         status: "unconfirmed",
-        confidence: 0.93
+        confidence: 0.93,
+        groupId: null,
+        summary: null
       },
       {
         id: "fact-resume-2-项目-数据看板项目",
@@ -67,9 +69,11 @@ describe("extractFactsFromResume", () => {
         label: "数据看板项目",
         value: "负责课程数据可视化看板",
         sourceType: "resume",
-        sourceRef: "测试文本简历",
+        sourceRef: expect.stringMatching(/^测试文本简历#/),
         status: "unconfirmed",
-        confidence: 0.81
+        confidence: 0.81,
+        groupId: null,
+        summary: null
       }
     ]);
     expect(new Set(facts.map((fact) => fact.id)).size).toBe(facts.length);
@@ -198,9 +202,11 @@ describe("extractFactsFromResume", () => {
         label: "React",
         value: "参与 React 组件整理",
         sourceType: "resume",
-        sourceRef: "测试简历",
+        sourceRef: expect.stringMatching(/^测试简历#/),
         status: "unconfirmed",
-        confidence: 1
+        confidence: 1,
+        groupId: null,
+        summary: null
       }
     ]);
   });

@@ -4,6 +4,7 @@ import type {
   MaterialPreview,
   PreferenceRuleSet,
   ProfileFact,
+  ProfileFactGroup,
   ScoreResult
 } from "../types";
 import type { FollowUpQuestion } from "./followUp";
@@ -20,6 +21,8 @@ export interface CoreState {
   schemaVersion: 1;
   updatedAt: string;
   factLibrary: ProfileFact[];
+  /** 父级分组（同一段工作经历/项目）。D034。 */
+  factGroups: ProfileFactGroup[];
   preferences: CorePreferences | null;
   jobs: CoreJobRecord[];
 }
@@ -74,6 +77,7 @@ export function createEmptyCoreState(): CoreState {
     schemaVersion: 1,
     updatedAt: new Date().toISOString(),
     factLibrary: [],
+    factGroups: [],
     preferences: null,
     jobs: []
   };
@@ -219,6 +223,33 @@ export function deleteFact(state: CoreState, factId: string): CoreState {
   return withUpdatedAt({ ...state, factLibrary: nextFactLibrary });
 }
 
+export function upsertFactGroups(state: CoreState, groups: ProfileFactGroup[]): CoreState {
+  const existingById = new Map(state.factGroups.map((group) => [group.id, group] as const));
+  const nextFactGroups = [...state.factGroups];
+
+  for (const group of groups) {
+    const index = nextFactGroups.findIndex((item) => item.id === group.id);
+    if (index >= 0) {
+      nextFactGroups[index] = group;
+    } else {
+      nextFactGroups.push(group);
+    }
+    existingById.set(group.id, group);
+  }
+
+  return withUpdatedAt({ ...state, factGroups: nextFactGroups });
+}
+
+/** 删父级：分组及其全部子事实一并删除（首席裁定）。 */
+export function deleteFactGroup(state: CoreState, groupId: string): CoreState {
+  const nextFactGroups = state.factGroups.filter((group) => group.id !== groupId);
+  const nextFactLibrary = state.factLibrary.filter((fact) => fact.groupId !== groupId);
+  if (nextFactGroups.length === state.factGroups.length && nextFactLibrary.length === state.factLibrary.length) {
+    return state;
+  }
+  return withUpdatedAt({ ...state, factGroups: nextFactGroups, factLibrary: nextFactLibrary });
+}
+
 export function serializeCoreState(state: CoreState): string {
   return JSON.stringify(state);
 }
@@ -275,6 +306,7 @@ function isCoreState(value: unknown): value is CoreState {
     typeof value.updatedAt === "string" &&
     Array.isArray(value.factLibrary) &&
     value.factLibrary.every(isProfileFact) &&
+    (value.factGroups === undefined || (Array.isArray(value.factGroups) && value.factGroups.every(isProfileFactGroup))) &&
     (value.preferences === null || value.preferences === undefined || isCorePreferences(value.preferences)) &&
     Array.isArray(value.jobs) &&
     value.jobs.every(isCoreJobRecord)
@@ -311,6 +343,12 @@ function isCoreJobRecord(value: unknown): value is CoreJobRecord {
 function normalizeCoreState(state: CoreState): CoreState {
   return {
     ...state,
+    factLibrary: state.factLibrary.map((fact) => ({
+      ...fact,
+      groupId: fact.groupId ?? null,
+      summary: fact.summary ?? null
+    })),
+    factGroups: state.factGroups ?? [],
     preferences: state.preferences
       ? {
           ...state.preferences,
@@ -468,7 +506,18 @@ function isProfileFact(value: unknown): value is ProfileFact {
     (value.sourceType === "resume" || value.sourceType === "user_answer" || value.sourceType === "manual") &&
     typeof value.sourceRef === "string" &&
     (value.status === "confirmed" || value.status === "unconfirmed" || value.status === "rejected") &&
-    typeof value.confidence === "number"
+    typeof value.confidence === "number" &&
+    (value.groupId === undefined || value.groupId === null || typeof value.groupId === "string") &&
+    (value.summary === undefined || value.summary === null || typeof value.summary === "string")
+  );
+}
+
+function isProfileFactGroup(value: unknown): value is ProfileFactGroup {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.category === "string" &&
+    typeof value.label === "string"
   );
 }
 

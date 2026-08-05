@@ -23,7 +23,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 2 行",
       status: "confirmed",
-      confidence: 0.95
+      confidence: 0.95,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-react",
@@ -33,7 +35,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 5 行",
       status: "confirmed",
-      confidence: 0.92
+      confidence: 0.92,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-ts",
@@ -43,7 +47,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 4 行",
       status: "confirmed",
-      confidence: 0.9
+      confidence: 0.9,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-miniapp",
@@ -53,7 +59,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 3 行",
       status: "confirmed",
-      confidence: 0.9
+      confidence: 0.9,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-echarts",
@@ -63,7 +71,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 4 行",
       status: "confirmed",
-      confidence: 0.86
+      confidence: 0.86,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-award",
@@ -73,7 +83,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "manual",
       sourceRef: "用户尚未确认的补充信息",
       status: "unconfirmed",
-      confidence: 0.42
+      confidence: 0.42,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-node",
@@ -83,7 +95,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "user_answer",
       sourceRef: "补充问题草稿，待用户确认",
       status: "unconfirmed",
-      confidence: 0.51
+      confidence: 0.51,
+      groupId: null,
+      summary: null
     },
     {
       id: "fact-shanghai",
@@ -93,7 +107,9 @@ export const sampleProfile: UserProfile = {
       sourceType: "resume",
       sourceRef: "样例简历第 6 行",
       status: "confirmed",
-      confidence: 0.88
+      confidence: 0.88,
+      groupId: null,
+      summary: null
     }
   ]
 };

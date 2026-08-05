@@ -15,3 +15,4 @@
 .is-processed { opacity:1; }
 .parse-fail { border-color:var(--red-border); }
 .profile-page h1 { font-size:18px; line-height:24px; font-weight:600; }
+.fact-group-tag { font-size:11px; color:var(--text-muted); margin-bottom:6px; font-weight:600; } .fact-summary { font-size:13px; color:var(--text-primary); font-weight:500; margin-bottom:4px; }

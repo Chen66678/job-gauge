@@ -151,6 +151,18 @@ export interface ProfileFact {
   sourceRef: string;
   status: FactStatus;
   confidence: number;
+  /** 所属父级分组（同一份工作经历/项目）；无分组为 null。D034。 */
+  groupId: string | null;
+  /** 展示专用摘要，回答"这是哪件事"；从不喂给生成模型，从不替代 value。D034。 */
+  summary: string | null;
+}
+
+/** 事实的父级分组：同一段工作经历/项目。分组本身不是 ProfileFact，从不参与生成投喂。D034。 */
+export interface ProfileFactGroup {
+  id: string;
+  category: string;
+  /** 公司/项目 + 角色 + 完整时间（不缩写）。 */
+  label: string;
 }
 
 export interface UserProfile {

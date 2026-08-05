@@ -44,6 +44,8 @@ function buildFact(): ProfileFact {
     sourceRef: '岗位追问',
     status: 'confirmed',
     confidence: 0.9,
+    groupId: null,
+    summary: null,
   }
 }
 

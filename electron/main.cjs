@@ -243,6 +243,7 @@ function registerCoreApiHandlers(core) {
   invoke("addManualFact", (input) => core.api.addManualFact(input));
   invoke("clearFactLibrary", () => core.api.clearFactLibrary());
   invoke("deleteFact", (factId) => core.api.deleteFact(factId));
+  invoke("deleteFactGroup", (groupId) => core.api.deleteFactGroup(groupId));
 
   registerByokHandlers(core);
 }

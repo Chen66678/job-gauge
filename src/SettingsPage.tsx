@@ -24,8 +24,11 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
   const [autoReevaluateCount, setAutoReevaluateCount] = useState(30)
   const [reevaluationPreview, setReevaluationPreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
 
+  const [factGroups, setFactGroups] = useState<{ id: string; category: string; label: string }[]>([])
+
   const refreshFacts = () => api.getState().then(state => {
     setFacts(state.factLibrary ?? [])
+    setFactGroups(state.factGroups ?? [])
     setAutoReevaluateCount(state.preferences?.autoReevaluateRecentCount ?? 30)
   })
 
@@ -136,9 +139,12 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
               <button onClick={() => void clearAllFacts()}>确认清空</button>
               <button style={{ marginLeft: 8 }} onClick={() => setClearConfirming(false)}>取消</button>
             </div>}
-        {facts.map(fact => (
+        {facts.map(fact => {
+          const group = fact.groupId ? factGroups.find(candidate => candidate.id === fact.groupId) : null
+          return (
           <div key={fact.id} style={{ borderBottom: '1px solid var(--border-hairline)', padding: '10px 0', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
+              {group && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, marginBottom: 4 }}>{group.label}</div>}
               <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 8 }}>{fact.category}</span>
               <strong>{fact.label}</strong>
               <span style={{ marginLeft: 8, fontSize: 12, color: 'var(--text-muted)' }}>{FACT_STATUS_LABEL[fact.status]}</span>
@@ -148,14 +154,18 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
                     <button onClick={() => void saveEdit(fact)}>保存</button>
                     <button style={{ marginLeft: 8 }} onClick={() => { setEditingFactId(null); setEditingValue('') }}>取消</button>
                   </div>
-                : <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>{fact.value}</div>}
+                : <>
+                    {fact.summary && <div style={{ marginTop: 4, fontSize: 13, fontWeight: 500 }}>{fact.summary}</div>}
+                    <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>{fact.value}</div>
+                  </>}
             </div>
             {editingFactId !== fact.id && <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button onClick={() => { setEditingFactId(fact.id); setEditingValue(fact.value) }}>编辑</button>
               <button onClick={() => void deleteFact(fact.id)}>删除</button>
             </div>}
           </div>
-        ))}
+          )
+        })}
       </>}
     </div>
   </div>

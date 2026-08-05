@@ -33,7 +33,9 @@ function buildFact(input: Partial<ProfileFact> & Pick<ProfileFact, "id" | "label
     sourceType: input.sourceType ?? "resume",
     sourceRef: input.sourceRef ?? "测试事实",
     status: input.status ?? "confirmed",
-    confidence: input.confidence ?? 0.9
+    confidence: input.confidence ?? 0.9,
+    groupId: input.groupId ?? null,
+    summary: input.summary ?? null
   };
 }
 

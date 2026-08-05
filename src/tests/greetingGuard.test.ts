@@ -3,7 +3,7 @@ import { sanitizeGreeting } from "../domain/greetingGuard";
 import type { ProfileFact } from "../types";
 
 const fact = (id: string, value: string, status: ProfileFact["status"] = "confirmed"): ProfileFact => ({
-  id, category: "经历", label: value, value, sourceType: "resume", sourceRef: "test", status, confidence: 1
+  id, category: "经历", label: value, value, sourceType: "resume", sourceRef: "test", status, confidence: 1, groupId: null, summary: null
 });
 
 describe("sanitizeGreeting", () => {

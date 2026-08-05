@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("coreApi", {
   addManualFact: (input) => invokeCoreApi("addManualFact", input),
   clearFactLibrary: () => invokeCoreApi("clearFactLibrary"),
   deleteFact: (factId) => invokeCoreApi("deleteFact", factId),
+  deleteFactGroup: (groupId) => invokeCoreApi("deleteFactGroup", groupId),
   saveAndVerifyByokKey: (request) => invokeCoreApi("saveAndVerifyByokKey", request),
   getByokKeyStatus: () => invokeCoreApi("getByokKeyStatus"),
   clearByokKey: () => invokeCoreApi("clearByokKey"),
