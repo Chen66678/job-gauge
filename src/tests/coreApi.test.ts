@@ -7,17 +7,24 @@ import type { OpenAiCompatibleLlmClient } from "../domain/llmClient";
 import type { FollowUpQuestion } from "../domain/followUp";
 import type { MaterialPreview, ProfileFact, ScoreResult } from "../types";
 
-const orchestrationMocks = vi.hoisted(() => ({
-  ingestResume: vi.fn(),
-  ingestPreferences: vi.fn(),
-  ingestJd: vi.fn(),
-  assembleJobPosting: vi.fn(),
-  evaluateJob: vi.fn(),
-  buildFollowUps: vi.fn(),
-  buildResumeFollowUps: vi.fn(),
-  applyFollowUpAnswers: vi.fn(),
-  draftMaterial: vi.fn()
-}));
+const orchestrationMocks = vi.hoisted(() => {
+  const ingestResume = vi.fn();
+  return {
+    ingestResume,
+    // D034②：coreApi 现在只调 ingestResumeWithGroups；这里包一层，让既有测试继续
+    // 通过 orchestrationMocks.ingestResume.mockResolvedValueOnce(...) 控制 facts，
+    // groups 默认空数组（分组相关行为由 resumeExtraction 自己的测试覆盖）。
+    ingestResumeWithGroups: vi.fn(async (input: unknown) => ({ facts: await ingestResume(input), groups: [] })),
+    ingestPreferences: vi.fn(),
+    ingestJd: vi.fn(),
+    assembleJobPosting: vi.fn(),
+    evaluateJob: vi.fn(),
+    buildFollowUps: vi.fn(),
+    buildResumeFollowUps: vi.fn(),
+    applyFollowUpAnswers: vi.fn(),
+    draftMaterial: vi.fn()
+  };
+});
 
 vi.mock("../domain/orchestration", () => orchestrationMocks);
 

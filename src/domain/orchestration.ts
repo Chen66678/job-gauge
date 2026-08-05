@@ -5,11 +5,12 @@ import type {
   MaterialPreview,
   PreferenceRuleSet,
   ProfileFact,
+  ProfileFactGroup,
   ScoreResult,
   UserProfile
 } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
-import { extractFactsFromResume } from "./resumeExtraction";
+import { extractFactsAndGroupsFromResume, extractFactsFromResume } from "./resumeExtraction";
 import { extractRequirementsFromJd } from "./jdExtraction";
 import { type HardVetoRule, type HardVetoRules, findVetoHit, parsePreferences } from "./preferenceParsing";
 import {
@@ -27,6 +28,19 @@ export async function ingestResume(input: {
   client: OpenAiCompatibleLlmClient;
 }): Promise<ProfileFact[]> {
   return extractFactsFromResume({
+    kind: "text",
+    resumeText: input.resume.resumeText,
+    client: input.client
+  });
+}
+
+// D034②：与 ingestResume 并行的入口，多带出父级分组（同一段工作经历/项目），
+// 供 coreApi 写入 CoreState.factGroups。ingestResume 本身不变，避免动到既有调用方。
+export async function ingestResumeWithGroups(input: {
+  resume: { kind: "text"; resumeText: string };
+  client: OpenAiCompatibleLlmClient;
+}): Promise<{ facts: ProfileFact[]; groups: ProfileFactGroup[] }> {
+  return extractFactsAndGroupsFromResume({
     kind: "text",
     resumeText: input.resume.resumeText,
     client: input.client

@@ -15,6 +15,7 @@ import {
   setJobPinned as setCoreJobPinned,
   setPreferences as setCorePreferences,
   upsertFacts,
+  upsertFactGroups,
   upsertJobRecord
 } from "./coreState";
 import type { FollowUpQuestion } from "./followUp";
@@ -31,7 +32,7 @@ import {
   evaluateJob,
   ingestJd,
   ingestPreferences,
-  ingestResume
+  ingestResumeWithGroups
 } from "./orchestration";
 import type { LocalStorageLike } from "./storage";
 import { redactSecretValues } from "./workbenchRepository";
@@ -286,11 +287,12 @@ export function createCoreApi(deps: {
     },
 
     async ingestResume(input) {
-      const facts = await ingestResume({
+      const { facts, groups } = await ingestResumeWithGroups({
         resume: input,
         client: deps.client
       });
       const confirmedFacts = preserveUserDecidedStatus(facts);
+      persist(upsertFactGroups(state, groups));
       persist(upsertFacts(state, confirmedFacts));
       await automaticallyReevaluateAfterFactChange();
       return confirmedFacts;
