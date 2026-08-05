@@ -42,6 +42,8 @@ export interface CoreJobRecord {
   collectedAt: string;
   /** 偏好或简历更新后，原评分不能再作为当前评分展示。 */
   evaluationStale: boolean;
+  /** 最近一次成功评估时已确认事实 id 集合的有序指纹；缺失视为不匹配。 */
+  evaluatedFactFingerprint?: string;
   updatedAt: string;
 }
 
@@ -200,6 +202,13 @@ export function getConfirmedFacts(state: CoreState): ProfileFact[] {
   return state.factLibrary.filter((fact) => fact.status === "confirmed");
 }
 
+export function computeConfirmedFactsFingerprint(state: CoreState): string {
+  return getConfirmedFacts(state)
+    .map((fact) => fact.id)
+    .sort()
+    .join(",");
+}
+
 export function clearFactLibrary(state: CoreState): CoreState {
   return withUpdatedAt({ ...state, factLibrary: [] });
 }
@@ -294,6 +303,7 @@ function isCoreJobRecord(value: unknown): value is CoreJobRecord {
     (value.preScreenResult === null || value.preScreenResult === undefined || isKeywordPreScreenResult(value.preScreenResult)) &&
     (value.collectedAt === undefined || typeof value.collectedAt === "string") &&
     (value.evaluationStale === undefined || typeof value.evaluationStale === "boolean") &&
+    (value.evaluatedFactFingerprint === undefined || typeof value.evaluatedFactFingerprint === "string") &&
     typeof value.updatedAt === "string"
   );
 }

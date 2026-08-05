@@ -3,6 +3,7 @@ import { normalizeAutoReevaluateRecentCount, type BatchDiagnosis, type CoreJobRe
 import {
   clearCoreState,
   clearFactLibrary as clearCoreFactLibrary,
+  computeConfirmedFactsFingerprint,
   deleteFact as deleteCoreFactById,
   getConfirmedFacts,
   getJobRecord,
@@ -61,10 +62,10 @@ const BATCH_DIAGNOSIS_SYSTEM_PROMPT = [
 
 export interface CoreApi {
   getState(): CoreState;
-  addManualFact(input: { content: string; category: string }): void;
+  addManualFact(input: { content: string; category: string }): Promise<void>;
   ingestResume(input: { kind: "text"; resumeText: string }): Promise<ProfileFact[]>;
   setFactStatus(factId: string, status: FactStatus): void;
-  setFactStatusBatch(updates: { factId: string; status: FactStatus }[]): void;
+  setFactStatusBatch(updates: { factId: string; status: FactStatus }[]): Promise<void>;
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
   setAutoReevaluateRecentCount(count: number): void;
   getReevaluationPreview(scope: ReevaluationScope): ReevaluationPreview;
@@ -96,7 +97,7 @@ export interface CoreApi {
   preScreenJob(jobId: string, keywords: string[]): KeywordPreScreenResult | null;
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
   clearFactLibrary(): void;
-  deleteFact(factId: string): void;
+  deleteFact(factId: string): Promise<void>;
   clear(): void;
 }
 
@@ -195,6 +196,23 @@ export function createCoreApi(deps: {
     await Promise.all(getRecentReevaluationRecords().map((record) => reevaluateRecord(record.job.id)));
   }
 
+  function markJobsWithStaleFacts(): void {
+    const currentFingerprint = computeConfirmedFactsFingerprint(state);
+    let changed = false;
+    const jobs = state.jobs.map((record) => {
+      if (record.evaluationStale) return record;
+      if (record.evaluatedFactFingerprint === currentFingerprint) return record;
+      changed = true;
+      return { ...record, evaluationStale: true };
+    });
+    if (changed) persist({ ...state, jobs });
+  }
+
+  async function automaticallyReevaluateAfterFactChange(): Promise<void> {
+    markJobsWithStaleFacts();
+    await automaticallyReevaluateRecentJobs();
+  }
+
   async function reevaluateRecord(jobId: string): Promise<CoreJobRecord | null> {
     const record = getJobRecord(state, jobId);
     if (!record || record.job.requirements.length === 0) {
@@ -217,7 +235,8 @@ export function createCoreApi(deps: {
           ? { vetoed: true, vetoRuleId: evaluation.vetoRule.id, vetoRuleLabel: evaluation.vetoRule.label }
           : { vetoed: false, score: evaluation.score },
         evaluationError: null,
-        evaluationStale: false
+        evaluationStale: false,
+        evaluatedFactFingerprint: computeConfirmedFactsFingerprint(state)
       }));
       return getJobRecord(state, jobId);
     } catch (error) {
@@ -236,7 +255,7 @@ export function createCoreApi(deps: {
       return state;
     },
 
-    addManualFact(input) {
+    async addManualFact(input) {
       const content = input.content.trim();
       const category = input.category.trim();
       // length + 1 会在删过事实后与既有 id 撞号，需查重递增。
@@ -258,6 +277,7 @@ export function createCoreApi(deps: {
         confidence: 1
       };
       persist(upsertFacts(state, [fact]));
+      await automaticallyReevaluateAfterFactChange();
     },
 
     async ingestResume(input) {
@@ -267,7 +287,7 @@ export function createCoreApi(deps: {
       });
       const confirmedFacts = preserveUserDecidedStatus(facts);
       persist(upsertFacts(state, confirmedFacts));
-      await automaticallyReevaluateRecentJobs();
+      await automaticallyReevaluateAfterFactChange();
       return confirmedFacts;
     },
 
@@ -275,8 +295,9 @@ export function createCoreApi(deps: {
       persist(setCoreFactStatus(state, factId, status));
     },
 
-    setFactStatusBatch(updates) {
+    async setFactStatusBatch(updates) {
       persist(setCoreFactStatusBatch(state, updates));
+      await automaticallyReevaluateAfterFactChange();
     },
 
     async setPreferencesFromText(input) {
@@ -397,7 +418,8 @@ export function createCoreApi(deps: {
             material: null,
             updatedAt: new Date().toISOString(),
             collectedAt: previous?.collectedAt ?? new Date().toISOString(),
-            evaluationStale: false
+            evaluationStale: false,
+            evaluatedFactFingerprint: computeConfirmedFactsFingerprint(state)
           };
 
           persist(upsertJobRecord(state, record));
@@ -643,10 +665,12 @@ export function createCoreApi(deps: {
 
     clearFactLibrary() {
       persist(clearCoreFactLibrary(state));
+      markJobsWithStaleFacts();
     },
 
-    deleteFact(factId) {
+    async deleteFact(factId) {
       persist(deleteCoreFactById(state, factId));
+      await automaticallyReevaluateAfterFactChange();
     },
 
     clear() {

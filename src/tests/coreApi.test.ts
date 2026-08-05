@@ -949,3 +949,159 @@ describe("automatic reevaluation scope", () => {
     expect(api.getState().jobs.find((record) => record.job.id === "old")?.evaluationStale).toBe(true);
   });
 });
+
+describe("fact fingerprint", () => {
+  const COLLECTED = "2026-08-04T00:00:00.000Z";
+
+  function seedState(storage: MemoryStorage, jobs: CoreJobRecord[], facts: ProfileFact[] = []) {
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: COLLECTED,
+      factLibrary: facts,
+      preferences: null,
+      jobs
+    }));
+  }
+
+  function makeJobRecord(id: string, extras: { evaluatedFactFingerprint?: string; evaluationStale?: boolean } = {}): CoreJobRecord {
+    return {
+      job: {
+        id, title: "前端工程师", company: "测试公司", city: "上海",
+        salaryK: [20, 30] as [number, number], companyTags: [],
+        jdText: "要求 React 开发", requirements: [buildRequirement()],
+        risks: [], reviewFlags: [], pinned: false, workAddress: null, sourceUrl: null
+      },
+      evaluation: { vetoed: false, score: buildScoreResult() },
+      evaluationError: null, followUps: [], material: null,
+      collectedAt: COLLECTED, evaluationStale: false, updatedAt: COLLECTED,
+      ...extras
+    };
+  }
+
+  it("reevaluateJob writes evaluatedFactFingerprint on success", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [makeJobRecord("job-1", { evaluationStale: true })], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.reevaluateJob("job-1");
+
+    expect(api.getState().jobs[0].evaluatedFactFingerprint).toBe("fact-1");
+  });
+
+  it("markJobsWithStaleFacts keeps job not stale when fingerprint matches", () => {
+    const storage = new MemoryStorage();
+    seedState(storage, [makeJobRecord("job-1", { evaluatedFactFingerprint: "" })]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearFactLibrary();
+
+    expect(api.getState().jobs[0].evaluationStale).toBe(false);
+  });
+
+  it("markJobsWithStaleFacts marks stale when fingerprint differs", () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [makeJobRecord("job-1", { evaluatedFactFingerprint: "fact-1" })], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearFactLibrary();
+
+    expect(api.getState().jobs[0].evaluationStale).toBe(true);
+  });
+
+  it("record with no evaluatedFactFingerprint is treated as stale (legacy data)", () => {
+    const storage = new MemoryStorage();
+    seedState(storage, [makeJobRecord("job-1")]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearFactLibrary();
+
+    expect(api.getState().jobs[0].evaluationStale).toBe(true);
+  });
+
+  it("setFactStatusBatch triggers reevaluation", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [makeJobRecord("job-1")], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.setFactStatusBatch([{ factId: "fact-1", status: "rejected" }]);
+
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalled();
+  });
+
+  it("addManualFact triggers reevaluation", async () => {
+    const storage = new MemoryStorage();
+    seedState(storage, [makeJobRecord("job-1")]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.addManualFact({ content: "TypeScript 开发", category: "技能" });
+
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalled();
+  });
+
+  it("deleteFact triggers reevaluation", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [makeJobRecord("job-1")], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.deleteFact("fact-1");
+
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalled();
+  });
+
+  it("clearFactLibrary marks jobs stale but does not call evaluateJob", () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [makeJobRecord("job-1", { evaluatedFactFingerprint: "fact-1" })], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearFactLibrary();
+
+    expect(api.getState().jobs[0].evaluationStale).toBe(true);
+    expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
+  });
+
+  it("setFactStatus (single) does not trigger reevaluation", () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "unconfirmed" });
+    seedState(storage, [makeJobRecord("job-1")], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.setFactStatus("fact-1", "rejected");
+
+    expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
+  });
+
+  it("evaluateJobFromJd writes evaluatedFactFingerprint on success", async () => {
+    const storage = new MemoryStorage();
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "confirmed" });
+    seedState(storage, [], [fact]);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    const record = await api.evaluateJobFromJd({
+      jdText: "要求 React 开发",
+      jobBase: { title: "前端工程师", company: "测试公司", city: "上海", salaryK: [20, 30], companyTags: [] }
+    });
+
+    expect(record.evaluatedFactFingerprint).toBe("fact-1");
+  });
+
+  it("newly collected job is not marked stale when confirmed facts are unchanged after collection", async () => {
+    // 空事实库：指纹 = ""；evaluateJobFromJd 完成后写入 ""；clearFactLibrary 后仍是 "" → 不标 stale
+    // 修复前：fingerprint 为 undefined → undefined !== "" → 被误标过期
+    const storage = new MemoryStorage();
+    seedState(storage, []);
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.evaluateJobFromJd({
+      jdText: "要求 React 开发",
+      jobBase: { title: "前端工程师", company: "测试公司", city: "上海", salaryK: [20, 30], companyTags: [] }
+    });
+    api.clearFactLibrary();
+
+    expect(api.getState().jobs[0].evaluationStale).toBe(false);
+  });
+});
