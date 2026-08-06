@@ -3,7 +3,7 @@
 // 在真实简历事实库上摸评分链的表现基线 + 扫链路 bug(会不会报错/输出合不合理/有无编造)。
 // 不是建正式评测集(那要等用户插件采的真实 JD),JD 为手造样例,覆盖高匹配/低匹配/部分匹配+学历风险三档。
 // 范围说明:本轮不设置 setPreferencesFromText,硬否决(hardVeto)路径不会触发,留下一批。
-// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/job-scoring-chain-smoke.ts
+// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen-plus npx tsx scripts/eval/job-scoring-chain-smoke.ts
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -117,7 +117,7 @@ async function main() {
     console.log("请用 DASHSCOPE_API_KEY=... 运行");
     process.exit(0);
   }
-  const textModel = process.env.TEXT_MODEL?.trim() || "qwen3.6-plus";
+  const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
   const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
   const storage = new MemoryStorage();

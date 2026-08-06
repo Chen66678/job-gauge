@@ -6,7 +6,7 @@
 // 只从用户本机 Electron userData 目录读 core-state.json（只读，从不写回、从不拷进 repo）。
 // 若该文件不存在或事实库为空，直接退出并提示"请先在应用里传一次简历"。
 //
-// 跑法：DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/material-rewrite-live.ts [jobId前缀] [重复次数]
+// 跑法：DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen-plus npx tsx scripts/eval/material-rewrite-live.ts [jobId前缀] [重复次数]
 import { readFileSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -98,7 +98,7 @@ async function main() {
     console.log("请用 DASHSCOPE_API_KEY=... 运行");
     process.exit(0);
   }
-  const textModel = process.env.TEXT_MODEL?.trim() || "qwen3.6-plus";
+  const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
   const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
 

@@ -1,6 +1,6 @@
 // 评测 harness · 阶段1:真实简历 → 抽取事实 → 简历反问
 // 只读评测,不碰产品代码、不碰红线。key 只经 env 传,输出打码。
-// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/resume-baseline.ts
+// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen-plus npx tsx scripts/eval/resume-baseline.ts
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,7 +20,7 @@ async function main() {
     console.log("请用 DASHSCOPE_API_KEY=... 运行");
     process.exit(0);
   }
-  const textModel = process.env.TEXT_MODEL?.trim() || "qwen3.6-plus";
+  const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
   const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
 

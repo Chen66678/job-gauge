@@ -14,7 +14,7 @@
 //
 // 跑法：
 //   npx tsx scripts/eval/full-chain-smoke.ts
-//   DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/full-chain-smoke.ts
+//   DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen-plus npx tsx scripts/eval/full-chain-smoke.ts
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -280,7 +280,7 @@ async function main(): Promise<void> {
   const client = isLive
     ? createLlmClient({
         apiKey,
-        textModel: process.env.TEXT_MODEL?.trim() || "qwen3.6-plus",
+        textModel: process.env.TEXT_MODEL?.trim() || "qwen-plus",
         timeoutMs: Number(process.env.PROBE_TIMEOUT_MS) || 180_000
       })
     : createLlmClient({

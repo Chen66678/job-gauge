@@ -7,3 +7,4 @@ dist/
 agent-team-archive/
 agent-team-runtime/
 scripts/eval/_private/
+_dispatch-logs/

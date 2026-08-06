@@ -1,7 +1,7 @@
 // 诊断专用 · 不改产品代码 · 只读评测
 // 用同一份简历文本,对比"现产品 prompt"vs"显式逐条拆分规则的变体 prompt",
 // 验证"合并多条并列职责/指标"是否是召回不稳的根因。
-// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen3.6-plus npx tsx scripts/eval/resume-extraction-prompt-variant.ts
+// 跑法:DASHSCOPE_API_KEY=<key> TEXT_MODEL=qwen-plus npx tsx scripts/eval/resume-extraction-prompt-variant.ts
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,7 +74,7 @@ async function main() {
     console.log("请用 DASHSCOPE_API_KEY=... 运行");
     process.exit(0);
   }
-  const textModel = process.env.TEXT_MODEL?.trim() || "qwen3.6-plus";
+  const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
   const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
   const resumeText = readFileSync(join(__dirname, "_private", "resume.txt"), "utf8");
