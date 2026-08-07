@@ -1,6 +1,7 @@
 import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact, ProfileFactGroup } from './types'
 import type { CoreApiResult } from './coreApiResult'
 import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, SaveAndVerifyByokKeyResult } from './domain/byokKeyStore'
+import type { FactConflict } from './domain/coreApi'
 
 export type FollowUpQuestion = {
   id: string
@@ -35,11 +36,14 @@ export type WorkflowJob = {
 export type WorkflowState = {
   factLibrary: ProfileFact[]
   factGroups?: ProfileFactGroup[]
+  factConflicts?: FactConflict[]
   jobs: WorkflowJob[]
   preferences?: { autoReevaluateRecentCount?: number } | null
 }
 
 export type ReevaluationPreview = { jobCount: number; modelCallCount: number }
+
+export type ReconciliationPreview = { modelCallCount: number }
 
 export type WorkflowApi = {
   getState: () => Promise<WorkflowState>
@@ -69,6 +73,8 @@ export type WorkflowApi = {
   clearFactLibrary: () => Promise<CoreApiResult<void>>
   deleteFact: (factId: string) => Promise<CoreApiResult<void>>
   deleteFactGroup: (groupId: string) => Promise<CoreApiResult<void>>
+  getReconciliationPreview: () => Promise<CoreApiResult<ReconciliationPreview>>
+  dismissFactConflict: (conflictId: string) => Promise<CoreApiResult<void>>
   saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
   getByokKeyStatus: () => Promise<ByokKeyStatus>
   clearByokKey: () => Promise<ClearByokKeyResult>

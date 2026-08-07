@@ -244,6 +244,8 @@ function registerCoreApiHandlers(core) {
   invoke("clearFactLibrary", () => core.api.clearFactLibrary());
   invoke("deleteFact", (factId) => core.api.deleteFact(factId));
   invoke("deleteFactGroup", (groupId) => core.api.deleteFactGroup(groupId));
+  invoke("getReconciliationPreview", () => core.api.getReconciliationPreview());
+  invoke("dismissFactConflict", (conflictId) => core.api.dismissFactConflict(conflictId));
 
   registerByokHandlers(core);
 }

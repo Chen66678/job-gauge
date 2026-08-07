@@ -307,6 +307,136 @@ describe("coreApi", () => {
     expect(api.getState().factLibrary[0].status).toBe("confirmed");
   });
 
+  // 任务①：两份简历重叠 → 同一件事进库变多版本，在写库后跑调和。这里用两条不同 id
+  // 但同 category 的事实模拟"第二次上传抽出了新 id"的真实场景（extraction 每次重新生成 id）。
+  describe("[任务①] ingestResume 接线调和", () => {
+    it("merge 结论把两条事实收成一条，旧 id 存活、value 换成拼接结果", async () => {
+      const storage = new MemoryStorage();
+      const existing = buildFact({
+        id: "fact-1",
+        category: "工作经历",
+        label: "后端开发",
+        value: "负责订单服务的开发",
+        status: "confirmed"
+      });
+      const incoming = buildFact({
+        id: "fact-2",
+        category: "工作经历",
+        label: "后端开发",
+        value: "负责订单服务的开发，日均处理 10 万单"
+      });
+      orchestrationMocks.ingestResume.mockResolvedValueOnce([existing]).mockResolvedValueOnce([incoming]);
+      const reconcileClient = createTextClient(
+        JSON.stringify({
+          items: [
+            {
+              verdict: "merge",
+              versionIds: ["fact-1", "fact-2"],
+              rationale: "同一份工作经历，第二版补了数字"
+            }
+          ]
+        })
+      );
+      const api = createCoreApi({ client: reconcileClient, storage });
+
+      await api.ingestResume({ kind: "text", resumeText: "第一份简历" });
+      await api.ingestResume({ kind: "text", resumeText: "第二份简历" });
+
+      const library = api.getState().factLibrary;
+      expect(library).toHaveLength(1);
+      expect(library[0]!.id).toBe("fact-1");
+      expect(library[0]!.status).toBe("confirmed");
+      expect(library[0]!.value).toContain("负责订单服务的开发");
+      expect(library[0]!.value).toContain("日均处理 10 万单");
+      expect(api.getState().factConflicts).toEqual([]);
+    });
+
+    it("conflict 结论只登记进 factConflicts，不动 factLibrary 一个字", async () => {
+      const storage = new MemoryStorage();
+      const existing = buildFact({
+        id: "fact-1",
+        category: "工作经历",
+        label: "项目角色",
+        value: "参与了推荐系统重构"
+      });
+      const incoming = buildFact({
+        id: "fact-2",
+        category: "工作经历",
+        label: "项目角色",
+        value: "主导了推荐系统重构"
+      });
+      orchestrationMocks.ingestResume.mockResolvedValueOnce([existing]).mockResolvedValueOnce([incoming]);
+      const reconcileClient = createTextClient(
+        JSON.stringify({
+          items: [
+            {
+              verdict: "conflict",
+              versionIds: ["fact-1", "fact-2"],
+              rationale: "参与 vs 主导，说法矛盾"
+            }
+          ]
+        })
+      );
+      const api = createCoreApi({ client: reconcileClient, storage });
+
+      await api.ingestResume({ kind: "text", resumeText: "第一份简历" });
+      await api.ingestResume({ kind: "text", resumeText: "第二份简历" });
+
+      const library = api.getState().factLibrary;
+      expect(library).toHaveLength(2);
+      expect(library.map((fact) => fact.value)).toEqual(["参与了推荐系统重构", "主导了推荐系统重构"]);
+
+      const conflicts = api.getState().factConflicts;
+      expect(conflicts).toHaveLength(1);
+      expect(conflicts[0]!.factIds.sort()).toEqual(["fact-1", "fact-2"]);
+      expect(conflicts[0]!.rationale).toBe("参与 vs 主导，说法矛盾");
+
+      api.dismissFactConflict(conflicts[0]!.id);
+      expect(api.getState().factConflicts).toEqual([]);
+    });
+
+    it("调和模型输出解析失败（fail-closed）时事实库原样保留，不静默丢证据", async () => {
+      const storage = new MemoryStorage();
+      const existing = buildFact({ id: "fact-1", category: "工作经历", label: "后端开发", value: "负责订单服务的开发" });
+      const incoming = buildFact({ id: "fact-2", category: "工作经历", label: "后端开发", value: "负责订单服务的重构" });
+      orchestrationMocks.ingestResume.mockResolvedValueOnce([existing]).mockResolvedValueOnce([incoming]);
+      const reconcileClient = createTextClient("不是 json");
+      const api = createCoreApi({ client: reconcileClient, storage });
+
+      await api.ingestResume({ kind: "text", resumeText: "第一份简历" });
+      await api.ingestResume({ kind: "text", resumeText: "第二份简历" });
+
+      expect(api.getState().factLibrary).toHaveLength(2);
+      expect(api.getState().factConflicts).toEqual([]);
+    });
+
+    it("库里少于两个版本可比时不触发调和模型调用（同 category 首次入库）", async () => {
+      const storage = new MemoryStorage();
+      const fact = buildFact({ id: "fact-1", category: "工作经历", label: "后端开发", value: "负责订单服务的开发" });
+      orchestrationMocks.ingestResume.mockResolvedValueOnce([fact]);
+      const reconcileClient = createClient();
+      const api = createCoreApi({ client: reconcileClient, storage });
+
+      await api.ingestResume({ kind: "text", resumeText: "第一份简历" });
+
+      expect(reconcileClient.completeText).not.toHaveBeenCalled();
+    });
+
+    it("getReconciliationPreview 按库里已有事实覆盖的 category 数报告成本上限", async () => {
+      const storage = new MemoryStorage();
+      const api = createCoreApi({ client: createClient(), storage });
+      expect(api.getReconciliationPreview()).toEqual({ modelCallCount: 0 });
+
+      orchestrationMocks.ingestResume.mockResolvedValueOnce([
+        buildFact({ id: "fact-1", category: "工作经历", label: "后端开发", value: "负责订单服务的开发" }),
+        buildFact({ id: "fact-2", category: "技能", label: "TypeScript", value: "熟悉 TypeScript" })
+      ]);
+      await api.ingestResume({ kind: "text", resumeText: "简历" });
+
+      expect(api.getReconciliationPreview()).toEqual({ modelCallCount: 2 });
+    });
+  });
+
   it("clearFactLibrary removes all facts from state", () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });

@@ -14,6 +14,7 @@ import type { RiskSensitivity } from "./llmScoring";
 import { type LocalStorageLike } from "./storage";
 import { collectSensitiveRepositoryFindings } from "./workbenchRepository";
 import { isRecord } from "./shared";
+import type { ReconciliationPlan } from "./factReconciliation";
 
 export const CORE_STATE_STORAGE_KEY = "boss-local-core-state:v1";
 
@@ -23,8 +24,22 @@ export interface CoreState {
   factLibrary: ProfileFact[];
   /** 父级分组（同一段工作经历/项目）。D034。 */
   factGroups: ProfileFactGroup[];
+  /**
+   * 调和判定为 conflict 的登记（任务①）。只登记，不裁决——
+   * replace / keep-both / ask 三种归档语义 D036 §四未定，本层不许焊死任何一种。
+   */
+  factConflicts: FactConflict[];
   preferences: CorePreferences | null;
   jobs: CoreJobRecord[];
+}
+
+/** 调和判定为 conflict 时的登记条目。见 factReconciliation.ts 的 ReconciliationItem。 */
+export interface FactConflict {
+  /** 由涉及的 factId 集合派生，同一组重复出现只更新，不重复登记。 */
+  id: string;
+  factIds: string[];
+  rationale: string;
+  detectedAt: string;
 }
 
 export interface CorePreferences {
@@ -78,6 +93,7 @@ export function createEmptyCoreState(): CoreState {
     updatedAt: new Date().toISOString(),
     factLibrary: [],
     factGroups: [],
+    factConflicts: [],
     preferences: null,
     jobs: []
   };
@@ -223,6 +239,90 @@ export function deleteFact(state: CoreState, factId: string): CoreState {
   return withUpdatedAt({ ...state, factLibrary: nextFactLibrary });
 }
 
+/**
+ * 把调和结论落到 factLibrary + factConflicts。
+ *
+ * merge/supplement：涉及的多条事实收成一条——保留 versionIds[0] 的 id/groupId/sourceRef/status
+ * （谁先出现在调和输入里谁当代表，调用方按 precedence 排好序传入），value/label/category
+ * 换成 reconstructMergedValue 已经拼好的原文，其余版本从 factLibrary 里移除。
+ * 不改 value 措辞——mergedValue 只可能来自 factReconciliation.ts 的机械拼接。
+ *
+ * conflict：只登记进 factConflicts，不动 factLibrary 一个字——三种归档语义 D036 §四未定，
+ * 本函数不许替用户/首席拍板。
+ *
+ * plan.unusable 为 true 时 items 本就是空的（fail-closed 在模块内已保证），这里原样跳过。
+ */
+export function applyReconciliationPlan(state: CoreState, plan: ReconciliationPlan): CoreState {
+  if (plan.unusable) {
+    return state;
+  }
+
+  let nextFactLibrary = state.factLibrary;
+  for (const item of plan.items) {
+    if (item.verdict !== "merge" && item.verdict !== "supplement") {
+      continue;
+    }
+    if (item.mergedValue === undefined) {
+      continue;
+    }
+    // 存活 id 选谁：模型返回的 versionIds 顺序不代表优先级（模型不产出优先级，
+    // 见 factReconciliation.ts 的 FactVersion.precedence 注释）。取 nextFactLibrary
+    // 里已排在前面的那个存活——库里靠前通常是先入库的既有事实，这样默认保留的是
+    // 用户已经做过确认/排除决定的那条 id/groupId/status，不被新抽取的一条覆盖掉。
+    const versionIdSet = new Set(item.versionIds);
+    const survivor = nextFactLibrary.find((fact) => versionIdSet.has(fact.id));
+    if (!survivor) {
+      continue;
+    }
+    const survivorId = survivor.id;
+    const absorbedIds = item.versionIds.filter((id) => id !== survivorId);
+    const absorbedSet = new Set(absorbedIds);
+    nextFactLibrary = nextFactLibrary
+      .filter((fact) => !absorbedSet.has(fact.id))
+      .map((fact) =>
+        fact.id === survivorId
+          ? {
+              ...fact,
+              value: item.mergedValue as string,
+              label: item.mergedLabel ?? fact.label,
+              category: item.mergedCategory ?? fact.category
+            }
+          : fact
+      );
+  }
+
+  let nextFactConflicts = state.factConflicts;
+  for (const conflict of plan.conflicts) {
+    nextFactConflicts = registerFactConflict(nextFactConflicts, conflict.versionIds, conflict.rationale);
+  }
+
+  if (nextFactLibrary === state.factLibrary && nextFactConflicts === state.factConflicts) {
+    return state;
+  }
+  return withUpdatedAt({ ...state, factLibrary: nextFactLibrary, factConflicts: nextFactConflicts });
+}
+
+function registerFactConflict(conflicts: FactConflict[], factIds: string[], rationale: string): FactConflict[] {
+  const id = [...factIds].sort().join("|");
+  const existingIndex = conflicts.findIndex((conflict) => conflict.id === id);
+  const entry: FactConflict = { id, factIds, rationale, detectedAt: new Date().toISOString() };
+  if (existingIndex < 0) {
+    return [...conflicts, entry];
+  }
+  const next = [...conflicts];
+  next[existingIndex] = entry;
+  return next;
+}
+
+/** 首席/用户在三种归档语义定下来之前，至少要能把已登记的冲突撤销（如已经手动处理过）。 */
+export function dismissFactConflict(state: CoreState, conflictId: string): CoreState {
+  const nextFactConflicts = state.factConflicts.filter((conflict) => conflict.id !== conflictId);
+  if (nextFactConflicts.length === state.factConflicts.length) {
+    return state;
+  }
+  return withUpdatedAt({ ...state, factConflicts: nextFactConflicts });
+}
+
 export function upsertFactGroups(state: CoreState, groups: ProfileFactGroup[]): CoreState {
   const existingById = new Map(state.factGroups.map((group) => [group.id, group] as const));
   const nextFactGroups = [...state.factGroups];
@@ -307,6 +407,7 @@ function isCoreState(value: unknown): value is CoreState {
     Array.isArray(value.factLibrary) &&
     value.factLibrary.every(isProfileFact) &&
     (value.factGroups === undefined || (Array.isArray(value.factGroups) && value.factGroups.every(isProfileFactGroup))) &&
+    (value.factConflicts === undefined || (Array.isArray(value.factConflicts) && value.factConflicts.every(isFactConflict))) &&
     (value.preferences === null || value.preferences === undefined || isCorePreferences(value.preferences)) &&
     Array.isArray(value.jobs) &&
     value.jobs.every(isCoreJobRecord)
@@ -349,6 +450,7 @@ function normalizeCoreState(state: CoreState): CoreState {
       summary: fact.summary ?? null
     })),
     factGroups: state.factGroups ?? [],
+    factConflicts: state.factConflicts ?? [],
     preferences: state.preferences
       ? {
           ...state.preferences,
@@ -518,6 +620,16 @@ function isProfileFactGroup(value: unknown): value is ProfileFactGroup {
     typeof value.id === "string" &&
     typeof value.category === "string" &&
     typeof value.label === "string"
+  );
+}
+
+function isFactConflict(value: unknown): value is FactConflict {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    isStringArray(value.factIds) &&
+    typeof value.rationale === "string" &&
+    typeof value.detectedAt === "string"
   );
 }
 

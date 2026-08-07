@@ -1,11 +1,14 @@
 import type { FactStatus, MaterialPreview, ProfileFact, ScoreResult, UserProfile } from "../types";
-import { normalizeAutoReevaluateRecentCount, type BatchDiagnosis, type CoreJobRecord, type CorePreferences, type CoreState } from "./coreState";
+import { normalizeAutoReevaluateRecentCount, type BatchDiagnosis, type CoreJobRecord, type CorePreferences, type CoreState, type FactConflict } from "./coreState";
+export type { FactConflict } from "./coreState";
 import {
+  applyReconciliationPlan,
   clearCoreState,
   clearFactLibrary as clearCoreFactLibrary,
   computeConfirmedFactsFingerprint,
   deleteFact as deleteCoreFactById,
   deleteFactGroup as deleteCoreFactGroup,
+  dismissFactConflict as dismissCoreFactConflict,
   getConfirmedFacts,
   getJobRecord,
   loadCoreState,
@@ -18,6 +21,7 @@ import {
   upsertFactGroups,
   upsertJobRecord
 } from "./coreState";
+import { reconcileFactVersions, toFactVersion } from "./factReconciliation";
 import type { FollowUpQuestion } from "./followUp";
 import { exportToMarkdown } from "./exportResume";
 import { buildResumeImageRenderInput, type ResumeImageRenderInput } from "./resumeImage";
@@ -50,6 +54,14 @@ export interface ReevaluationPreview {
   jobCount: number;
   modelCallCount: number;
 }
+/**
+ * 调和只在事实库已有 ≥1 条时才会触发（少于两个版本无从调和，见
+ * factReconciliation.ts 的 reconcileFactVersions 自身短路）。一次上传最多触发
+ * 一次调和模型调用——versions 一次性整批送进单次 completeText，不是逐对调用。
+ */
+export interface ReconciliationPreview {
+  modelCallCount: number;
+}
 
 const BATCH_DIAGNOSIS_SYSTEM_PROMPT = [
   "You analyze a batch of scored job recommendations and return json.",
@@ -71,6 +83,17 @@ export interface CoreApi {
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
   setAutoReevaluateRecentCount(count: number): void;
   getReevaluationPreview(scope: ReevaluationScope): ReevaluationPreview;
+  /**
+   * 上传简历前的成本预告（任务①交付物②）。extraction 本身已经是 1 次必经模型调用，
+   * 不在这个数里；这个数只算「调和」会追加的调用次数上限。
+   * 调和按 category 分批送模型（同一 category 一批一次调用，见 ingestResume 里的
+   * buildReconciliationCallsByCategory）——上限 = 当前库里已有事实覆盖的 category 种数
+   * （新抽取的事实只可能落进已有 category 之一，不会凑出更多批次）。真实触发数可能更少
+   * （某 category 本次没抽出新事实，或该 category 原本就只有 1 条，凑不成两个版本），
+   * 但不会更多。展示上限而非精确值，因为精确值要等 extraction 跑完才知道，那时模型
+   * 调用已经花出去了，达不到"花之前先亮成本"。
+   */
+  getReconciliationPreview(): ReconciliationPreview;
   reevaluateJobs(scope: ReevaluationScope): Promise<CoreJobRecord[]>;
   evaluateJobFromJd(input: {
     jdText: string;
@@ -102,6 +125,8 @@ export interface CoreApi {
   deleteFact(factId: string): Promise<void>;
   /** 删父级：分组连同其下全部子事实一并删除（首席裁定）。 */
   deleteFactGroup(groupId: string): Promise<void>;
+  /** 撤销一条已登记的调和冲突（如用户已手动处理过）。三种归档语义仍未定，这里不做任何裁决。 */
+  dismissFactConflict(conflictId: string): void;
   clear(): void;
 }
 
@@ -181,6 +206,55 @@ export function createCoreApi(deps: {
         record.job.requirements.length > 0 && !findVetoHit(record.job, state.preferences?.hardVeto ?? { rules: [] })
       )).length
     };
+  }
+
+  function getReconciliationPreview(): ReconciliationPreview {
+    const categories = new Set(state.factLibrary.map((fact) => fact.category));
+    return { modelCallCount: categories.size };
+  }
+
+  /**
+   * 调和的比对范围：按 category 分批，同一批里既有事实 + 本次新抽取事实一起送模型。
+   * 只按 category 分批（不按 groupId）——groupKey 本身跨次不稳（backlog 260-279 行），
+   * 拿它当调和范围的边界会把"一个真实项目在两次上传里 groupKey 不同"的情形提前切开，
+   * 调和永远看不到该合的两条在同一批里，等于让调和被 groupKey 的病连坐。
+   * category 稳定得多（模型不太会把"工作经历"抽成别的类），代价是同 category 下
+   * 不同工作/项目的事实会被送进同一批比对——由调和模型自己的 SAMENESS 判据分开
+   * （"两个不同雇主/项目永远不是同一件事"，见 factReconciliation.ts 的系统提示词），
+   * 不是本层需要额外做的事。
+   */
+  function buildReconciliationBatches(
+    existingFacts: ProfileFact[],
+    incomingFacts: ProfileFact[]
+  ): { category: string; versions: import("./factReconciliation").FactVersion[] }[] {
+    const categories = new Set([...existingFacts, ...incomingFacts].map((fact) => fact.category));
+    const batches: { category: string; versions: import("./factReconciliation").FactVersion[] }[] = [];
+    for (const category of categories) {
+      const existingInCategory = existingFacts.filter((fact) => fact.category === category);
+      const incomingInCategory = incomingFacts.filter((fact) => fact.category === category);
+      if (existingInCategory.length === 0 || incomingInCategory.length === 0) {
+        // 只有既有事实、或只有新抽取事实，同一批里凑不出两个可比的版本来源。
+        continue;
+      }
+      const versions = [
+        ...existingInCategory.map((fact) => toFactVersion(fact, 1)),
+        ...incomingInCategory.map((fact) => toFactVersion(fact, 0))
+      ];
+      if (versions.length >= 2) {
+        batches.push({ category, versions });
+      }
+    }
+    return batches;
+  }
+
+  async function reconcileIncomingFacts(incomingFacts: ProfileFact[]): Promise<void> {
+    const incomingIds = new Set(incomingFacts.map((fact) => fact.id));
+    const existingFacts = state.factLibrary.filter((fact) => !incomingIds.has(fact.id));
+    const batches = buildReconciliationBatches(existingFacts, incomingFacts);
+    for (const batch of batches) {
+      const plan = await reconcileFactVersions({ versions: batch.versions, client: deps.client });
+      persist(applyReconciliationPlan(state, plan));
+    }
   }
 
   function markJobsOutsideRecentScopeStale(): void {
@@ -294,9 +368,14 @@ export function createCoreApi(deps: {
       const confirmedFacts = preserveUserDecidedStatus(facts);
       persist(upsertFactGroups(state, groups));
       persist(upsertFacts(state, confirmedFacts));
+      // 任务①：两份简历重叠时同一件事进库变多版本——在事实写库之后、
+      // 重评之前跑调和，合并/补充结论直接改库，conflict 只登记不裁决（D036 §四未定）。
+      await reconcileIncomingFacts(confirmedFacts);
       await automaticallyReevaluateAfterFactChange();
       return confirmedFacts;
     },
+
+    getReconciliationPreview,
 
     setFactStatus(factId, status) {
       persist(setCoreFactStatus(state, factId, status));
@@ -683,6 +762,10 @@ export function createCoreApi(deps: {
     async deleteFactGroup(groupId) {
       persist(deleteCoreFactGroup(state, groupId));
       await automaticallyReevaluateAfterFactChange();
+    },
+
+    dismissFactConflict(conflictId) {
+      persist(dismissCoreFactConflict(state, conflictId));
     },
 
     clear() {

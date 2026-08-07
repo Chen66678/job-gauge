@@ -81,6 +81,11 @@ export default function ProfilePage() {
   }
 
   const uploadResume = async (input: ResumeInput) => {
+    const reconciliationPreviewApi = api as Partial<Pick<WorkflowApi, 'getReconciliationPreview'>>
+    if (reconciliationPreviewApi.getReconciliationPreview) {
+      const preview = unwrap(await reconciliationPreviewApi.getReconciliationPreview())
+      if (preview.modelCallCount > 0 && !window.confirm(`已有事实库将与本次简历比对调和，预计额外消耗 ${preview.modelCallCount} 次模型调用。继续吗？`)) return
+    }
     const previewApi = api as Partial<Pick<WorkflowApi, 'getReevaluationPreview'>>
     if (previewApi.getReevaluationPreview) {
       const preview = unwrap(await previewApi.getReevaluationPreview('recent'))
@@ -185,7 +190,16 @@ export default function ProfilePage() {
     })
   }
 
+  const dismissConflict = (conflictId: string) => {
+    void run(async () => {
+      unwrap(await api.dismissFactConflict(conflictId))
+      await refreshState()
+    })
+  }
+
   const facts = state?.factLibrary ?? []
+  const factConflicts = state?.factConflicts ?? []
+  const factsById = new Map(facts.map(fact => [fact.id, fact] as const))
   const factGroupsById = new Map((state?.factGroups ?? []).map(group => [group.id, group] as const))
   const unconfirmedFacts = facts.filter(fact => fact.status === 'unconfirmed')
   const processedFacts = facts.filter(fact => fact.status !== 'unconfirmed')
@@ -231,6 +245,12 @@ export default function ProfilePage() {
     <div className="drop-zone"><div className="dz-icon"><UploadIcon /></div><div className="dz-title">上传 PDF、文本简历或粘贴简历内容</div><div className="dz-sub">支持 PDF、TXT、Markdown 格式</div><div className="dz-actions"><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />选择文件</button><button className="btn btn-primary" onClick={parseTypedResume} disabled={parsing}>解析简历</button></div>{selectedFileName && <p className="resume-title"><span className="ok-dot"><CheckIcon /></span>已选择文件：{selectedFileName}</p>}<textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} placeholder="粘贴简历文本" aria-label="粘贴简历文本" rows={4} /><input ref={fileInputRef} className="profile-file-input" type="file" accept=".txt,.md,.pdf" onChange={event => void fileSelected(event.target.files?.[0])} /></div>
     {error && <p role="alert" className="profile-error">{error}</p>}
     <div className="section-head"><span className="dot d-indigo" /><span className="section-title">事实库</span></div>
+    {factConflicts.length > 0 && <div className="conflict-section">{factConflicts.map(conflict => <div className="conflict-card" key={conflict.id}>
+      <div className="conflict-title"><WarningIcon />检测到同一事实的多个版本存在差异，需要你确认</div>
+      <div className="conflict-rationale">{conflict.rationale}</div>
+      <div className="conflict-versions">{conflict.factIds.map(factId => factsById.get(factId)).filter((fact): fact is ProfileFact => !!fact).map(fact => <div className="conflict-version" key={fact.id}>{fact.value}</div>)}</div>
+      <div className="conflict-actions"><button className="text-button" onClick={() => dismissConflict(conflict.id)}>已手动处理，移除提示</button></div>
+    </div>)}</div>}
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}
     {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{category}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
     {facts.length === 0 && !parsing && !parseError && <div className="empty-state facts-empty"><div className="empty-title">还没有可确认的事实</div><div className="empty-sub">上传并解析简历后，事实会按类别展示在这里。</div></div>}
