@@ -117,6 +117,55 @@ describe('ProfilePage resume upload', () => {
   })
 })
 
+describe('ProfilePage fact conflicts', () => {
+  it('renders a conflict card with the rationale and both versions when factConflicts has entries', async () => {
+    const state = {
+      factLibrary: [
+        { id: 'fact-1', category: '工作经历', label: '后端开发', value: '负责订单服务的开发', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+        { id: 'fact-2', category: '工作经历', label: '后端开发', value: '负责订单服务的重构', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+      ],
+      factConflicts: [
+        { id: 'conflict-1', factIds: ['fact-1', 'fact-2'], rationale: '两条描述指向同一职责但细节冲突', detectedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+      jobs: [],
+    } as unknown as WorkflowState
+    buildApi({ getState: vi.fn(async () => state) })
+
+    render(createElement(ProfilePage))
+
+    expect(await screen.findByText('两条描述指向同一职责但细节冲突')).not.toBeNull()
+    expect(screen.getByText('负责订单服务的开发')).not.toBeNull()
+    expect(screen.getByText('负责订单服务的重构')).not.toBeNull()
+  })
+
+  it('calls dismissFactConflict and refreshes state when the user clicks the dismiss action', async () => {
+    const state = {
+      factLibrary: [
+        { id: 'fact-1', category: '工作经历', label: '后端开发', value: '负责订单服务的开发', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+        { id: 'fact-2', category: '工作经历', label: '后端开发', value: '负责订单服务的重构', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+      ],
+      factConflicts: [
+        { id: 'conflict-1', factIds: ['fact-1', 'fact-2'], rationale: '两条描述指向同一职责但细节冲突', detectedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+      jobs: [],
+    } as unknown as WorkflowState
+    const clearedState = { ...state, factConflicts: [] } as unknown as WorkflowState
+    const getState = vi.fn()
+      .mockResolvedValueOnce(state)
+      .mockResolvedValue(clearedState)
+    const dismissFactConflict = vi.fn(async () => undefined)
+    buildApi({ getState, dismissFactConflict })
+
+    render(createElement(ProfilePage))
+
+    fireEvent.click(await screen.findByRole('button', { name: '已手动处理，移除提示' }))
+
+    await waitFor(() => expect(dismissFactConflict).toHaveBeenCalledWith('conflict-1'))
+    expect(getState).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByText('两条描述指向同一职责但细节冲突')).toBeNull())
+  })
+})
+
 describe('ProfilePage manual facts', () => {
   it('uses associated labels, blocks empty submission, and refreshes after adding', async () => {
     const state = {
