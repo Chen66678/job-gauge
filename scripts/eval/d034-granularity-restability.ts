@@ -163,14 +163,23 @@ function checkGroupingShape(run: number, snapshot: RunSnapshot): void {
     `${jobFacts.length} 条经历/项目类事实中 ${withoutGroup.length} 条无 groupId`
   );
 
-  const labelsWithoutTime = snapshot.groups.filter((group) => !/\d{4}|\d+年|\d+\.\d+|至今/.test(group.label));
+  // 规则D 判据（铁律1 优先）：
+  // ① 若原文有时间 → label 必须包含具体时间（数字年份/月份/至今），缺失算 WARN。
+  // ② 若原文没时间（项目类常见）→ label 必须显式标"未标明"，不得静默缺失也不得编造日期；
+  //    只含"未标明"字样即为诚实，这比缺时间好、比编一个日期安全得多。
+  // 这与铁律1「官方不主动编造」对齐：编日期比缺时间严重得多。
+  const labelsViolating = snapshot.groups.filter((group) => {
+    const hasConcreteTime = /\d{4}|\d+年|\d+\.\d+|至今/.test(group.label);
+    const hasExplicitNoTime = /未标明|无时间|未注明|时间.*未|不详/.test(group.label);
+    return !hasConcreteTime && !hasExplicitNoTime;
+  });
   judge(
     run,
-    "规则D·分组 label 含完整时间",
-    labelsWithoutTime.length === 0 ? "PASS" : "WARN",
-    labelsWithoutTime.length === 0
-      ? `${snapshot.groups.length} 个分组 label 均含时间`
-      : `无时间的 label：${labelsWithoutTime.map((g) => g.label).join(" | ")}`
+    "规则D·分组 label 时间处理",
+    labelsViolating.length === 0 ? "PASS" : "WARN",
+    labelsViolating.length === 0
+      ? `${snapshot.groups.length} 个分组 label 均含时间或显式标"未标明"`
+      : `label 既无时间也无"未标明"（疑似静默缺失）：${labelsViolating.map((g) => g.label).join(" | ")}`
   );
 
   const nonGroupFacts = snapshot.facts.filter((fact) => ["personal", "job_search", "education", "skill"].includes(fact.category));
@@ -343,9 +352,30 @@ async function main(): Promise<void> {
   console.log(`事实条数各次：[${factCounts.join(", ")}]  极差 ${spread(factCounts)}`);
   console.log(`分组个数各次：[${groupCounts.join(", ")}]  极差 ${spread(groupCounts)}`);
 
-  const groupCountStable = spread(groupCounts) === 0;
+  // 稳定性结论需要足够样本。样本不足时必须报"无法判断"，不得假绿。
+  // 阈值：至少 3 次成功才能谈稳定性趋势；满 5 次才算充分证明。
+  // 这与 D034:152「单次跑通不算证明」和 DETECT_ONLY 防红线空过的原则同源——
+  // 样本不足时空过不比踩红线危险性低，假绿比明说不稳更危险。
+  let groupStabilityVerdict: "STABLE" | "UNSTABLE" | "INSUFFICIENT";
+  let groupStabilityNote: string;
+  if (okRuns.length < 3) {
+    groupStabilityVerdict = "INSUFFICIENT";
+    groupStabilityNote = `成功 ${okRuns.length} 次，不足 3 次，无法判断稳定性`;
+  } else if (spread(groupCounts) === 0) {
+    groupStabilityVerdict = "STABLE";
+    groupStabilityNote = `${okRuns.length} 次分组个数完全一致（${groupCounts[0]}）`;
+  } else {
+    groupStabilityVerdict = "UNSTABLE";
+    groupStabilityNote = `${okRuns.length} 次分组个数不一致（极差 ${spread(groupCounts)}）→ 粒度判据不稳，正是 D025 那轮踩红线的前兆`;
+  }
   console.log(
-    `${groupCountStable ? "✅" : "❌"} 分组个数稳定性：${groupCountStable ? "5 次完全一致" : "各次不一致 → 粒度判据不稳"}`
+    `${groupStabilityVerdict === "STABLE" ? "✅" : groupStabilityVerdict === "INSUFFICIENT" ? "⚠️ " : "❌"} 分组个数稳定性：${groupStabilityNote}`
+  );
+
+  // 统计各维度连续 5 次都 WARN 的项（与判据说明第 4 条对齐：连续全 WARN = 规则没生效，是硬失败）
+  const warnNames = new Set(findings.filter((f) => f.verdict === "WARN").map((f) => f.name));
+  const allRunsWarn = [...warnNames].filter(
+    (name) => findings.filter((f) => f.name === name && f.verdict !== "PASS").length >= okRuns.length && okRuns.length >= RUNS
   );
 
   const redlineFails = findings.filter((f) => f.name.startsWith("红线") && f.verdict === "FAIL");
@@ -356,20 +386,31 @@ async function main(): Promise<void> {
   console.log("========== 判据结论（贴回给首席用这一段）==========");
   console.log(`红线（不同公司/不同项目糊成一条）：${redlineFails.length === 0 ? "0 次触发 → 未踩" : `${redlineFails.length} 次触发 → 已踩，D034 不过关`}`);
   console.log(`流程失败：${processFails.length} 次`);
-  console.log(`分组个数：${groupCountStable ? "稳定" : "不稳定"}（极差 ${spread(groupCounts)}）`);
+  console.log(
+    `分组个数稳定性：${groupStabilityVerdict === "STABLE" ? "稳定" : groupStabilityVerdict === "INSUFFICIENT" ? "⚠️ 无法判断（样本不足）" : "不稳定"}`
+  );
   console.log(`事实条数极差：${spread(factCounts)}（判据见下方说明，极差本身不单独定成败）`);
   console.log(`WARN 项：${warns.length} 条${warns.length > 0 ? " → " + warns.map((w) => `run${w.run}:${w.name}`).join(", ") : ""}`);
+  if (allRunsWarn.length > 0) {
+    console.log(`全轮连续 WARN（= 规则没生效，视同 FAIL）：${allRunsWarn.join(", ")}`);
+  }
   console.log("");
   console.log("【怎么读这份输出】");
   console.log("1. 红线只有一条硬的：任一次出现「同一条事实/同一个分组跨两个不同雇主或不同项目」= 不过关，回去改判据。");
-  console.log("2. 分组个数必须 5 次一致。个数飘 = 模型对「一段经历」的边界认定不稳，正是 D025 那轮踩红线的前兆。");
+  console.log("2. 分组个数必须 5 次成功且结果一致。成功次数 < 3 = 无法判断（不等于通过）；结果飘 = 粒度判据不稳。");
   console.log("3. 事实条数允许有极差（D034 明确不写死数字、按内容定），但极差 > 该简历经历条目数的一半，视为拆分判据不稳。");
-  console.log("4. WARN 不单独判不过关，是给人看的信号（如 summary 缺失、label 少时间）。连续 5 次同一处 WARN = 该处规则没生效，要改。");
-  console.log("5. 本脚本只验粒度/分组/措辞保留。「摘要要不要喂给生成」是 D034 另一个待实测项，不在本脚本范围。");
+  console.log("4. 连续全轮同一处 WARN = 规则没生效，本脚本将其视同 FAIL 列在总判据里。单次 WARN 只是信号。");
+  console.log("5. 规则D：项目/经历无时间时，模型标「未标明」是诚实的，不判失败。编造一个日期才违铁律1。");
+  console.log("6. 本脚本只验粒度/分组/措辞保留。「摘要要不要喂给生成」是 D034 另一个待实测项，不在本脚本范围。");
 
-  const hardFail = redlineFails.length > 0 || processFails.length > 0 || !groupCountStable;
+  const hardFail =
+    redlineFails.length > 0 ||
+    processFails.length > 0 ||
+    groupStabilityVerdict === "UNSTABLE" ||
+    groupStabilityVerdict === "INSUFFICIENT" ||
+    allRunsWarn.length > 0;
   console.log("");
-  console.log(`总判据：${hardFail ? "❌ 未过关（见上）" : "✅ 五次均未踩红线且分组稳定"}`);
+  console.log(`总判据：${hardFail ? "❌ 未过关（见上）" : "✅ 五次均未踩红线、分组稳定、无全轮连续 WARN"}`);
   console.log("⚠ 本脚本只给证据，不代表 D034 通过 —— 终判权在用户（域一级自审已被 08-05 实证不成立）。");
 }
 
