@@ -58,7 +58,10 @@ interface ChatMessage {
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_TEXT_MODEL = "qwen-plus";
 const DEFAULT_VISION_MODEL = "qwen-vl-max";
-const DEFAULT_TIMEOUT_MS = 30_000;
+// A failed early cutoff discards the user's work and burns another model call, while waiting longer
+// for a genuinely stuck request costs only bounded time. Observed latency clusters around 155s,
+// with tail samples at 182788ms and 183621ms, so 240s leaves 31% headroom without waiting forever.
+const DEFAULT_TIMEOUT_MS = 240_000;
 
 export class OpenAiCompatibleLlmClient {
   private readonly baseUrl: string;
@@ -263,4 +266,3 @@ function isChatCompletionsResponse(value: unknown): value is ChatCompletionsResp
     content.every((item) => isRecord(item) && typeof item.type === "string" && (item.text === undefined || typeof item.text === "string"))
   );
 }
-

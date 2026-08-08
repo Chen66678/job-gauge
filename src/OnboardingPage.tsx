@@ -24,6 +24,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const [resumeInput, setResumeInput] = useState<ResumeInput | null>(null)
   const [selectedFileName, setSelectedFileName] = useState<string | null>(null)
   const [parseStatus, setParseStatus] = useState<ParseStatus>('idle')
+  const [parseElapsedSeconds, setParseElapsedSeconds] = useState(0)
   const [parseCount, setParseCount] = useState(0)
   const [city, setCity] = useState('')
   const [salary, setSalary] = useState('')
@@ -50,6 +51,12 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     })
     return unsubscribe
   }, [step])
+  useEffect(() => {
+    if (parseStatus !== 'parsing') return
+    setParseElapsedSeconds(0)
+    const timer = window.setInterval(() => setParseElapsedSeconds(seconds => seconds + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [parseStatus])
 
   const stepClass = (index: number) => {
     if (index + 1 === step) return 'step-current'
@@ -128,7 +135,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
           <button className="upload-drop" onClick={() => fileInputRef.current?.click()}><span className="upload-drop-icon">📄</span>拖拽 PDF 或 TXT 简历到此处<br />或点击选择文件</button>
           <input ref={fileInputRef} className="hidden-file-input" type="file" accept=".pdf,.txt" onChange={event => void fileSelected(event.target.files?.[0])} />
           {selectedFileName && <p className="status-row">✓ 已选择文件：{selectedFileName}</p>}
-          {parseStatus === 'parsing' && <p className="inline-loading"><span className="spinner" />解析中，勿关窗</p>}
+          {parseStatus === 'parsing' && <p className="inline-loading"><span className="spinner" />解析中，勿关窗（已等待 {parseElapsedSeconds} 秒）<span>模型响应较慢，可能需要几分钟</span></p>}
           <div className="step-card-footer step-card-footer-single"><button className="primary-button" disabled={parseStatus === 'parsing'} onClick={() => void parseResume()}>解析简历</button></div>
         </>}
       </>}

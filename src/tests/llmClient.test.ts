@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLlmClient } from "../domain/llmClient";
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -25,6 +25,51 @@ function createFetchRecorder(responseFactory: (input: string, init: RequestInit)
 }
 
 describe("OpenAiCompatibleLlmClient", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("uses a 240-second default timeout when timeoutMs is omitted", async () => {
+    vi.useFakeTimers();
+    const client = createLlmClient({
+      apiKey: "test-key",
+      fetchImpl: (async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      })) as typeof fetch
+    });
+
+    const request = expect(client.completeText({ user: "hello" })).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(239_999);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await request;
+  });
+
+  it("uses an explicitly provided timeoutMs instead of the default", async () => {
+    vi.useFakeTimers();
+    const client = createLlmClient({
+      apiKey: "test-key",
+      timeoutMs: 1_234,
+      fetchImpl: (async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      })) as typeof fetch
+    });
+
+    const request = expect(client.completeText({ user: "hello" })).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(1_233);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await request;
+  });
+
   it("sends a text chat-completions request with the expected shape", async () => {
     const recorder = createFetchRecorder(async () =>
       jsonResponse(200, {

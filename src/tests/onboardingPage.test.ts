@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const { extractPdfResume, isPdfFile } = vi.hoisted(() => ({
@@ -17,6 +17,7 @@ import type { WorkflowApi } from '../workflowApi'
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   extractPdfResume.mockReset()
   isPdfFile.mockReset()
   localStorage.clear()
@@ -91,6 +92,29 @@ describe('OnboardingPage resume step', () => {
     fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
 
     await waitFor(() => expect(api.ingestResume).toHaveBeenCalledWith({ kind: 'text', resumeText: '张三\n产品经理' }))
+  })
+
+  it('shows slow-model guidance and stops the elapsed timer after parsing', async () => {
+    let resolveIngest: ((facts: never[]) => void) | undefined
+    buildApi({
+      ingestResume: vi.fn(() => new Promise<never[]>(resolve => { resolveIngest = resolve })),
+    })
+
+    render(createElement(OnboardingPage, { onFinished: vi.fn(), onOpenJobs: vi.fn() }))
+    await advanceToStep2()
+    await selectResumeFile(new File(['张三'], 'resume.txt', { type: 'text/plain' }))
+    await screen.findByText((_, element) => element?.textContent === '✓ 已选择文件：resume.txt')
+    vi.useFakeTimers()
+
+    fireEvent.click(screen.getByRole('button', { name: '解析简历' }))
+    expect(screen.getByText(/模型响应较慢，可能需要几分钟/)).not.toBeNull()
+    expect(screen.getByText(/已等待 0 秒/)).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(screen.getByText(/已等待 2 秒/)).not.toBeNull()
+
+    await act(async () => { resolveIngest?.([]) })
+    expect(screen.queryByText(/模型响应较慢，可能需要几分钟/)).toBeNull()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('uses the real saveAndVerifyByokKey IPC result instead of the old fake key==="invalid" check', async () => {
