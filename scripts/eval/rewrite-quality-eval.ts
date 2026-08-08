@@ -179,7 +179,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
-  const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
+  const timeoutMs = process.env.PROBE_TIMEOUT_MS ? Number(process.env.PROBE_TIMEOUT_MS) : undefined;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
 
   // 读真实数据

@@ -80,7 +80,7 @@ export class OpenAiCompatibleLlmClient {
     this.apiKey = config.apiKey;
     this.textModel = config.textModel ?? DEFAULT_TEXT_MODEL;
     this.visionModel = config.visionModel ?? DEFAULT_VISION_MODEL;
-    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = normalizeTimeoutMs(config.timeoutMs);
     this.fetchImpl = config.fetchImpl ?? globalThis.fetch;
 
     if (!this.fetchImpl) {
@@ -193,6 +193,17 @@ function buildVisionMessages(input: CompleteVisionInput): ChatMessage[] {
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
+}
+
+// A caller-supplied timeoutMs that is present but meaningless (NaN, <= 0, Infinity from an
+// unparseable/misconfigured env var) must fall back to the default rather than passing straight
+// through — otherwise it silently degrades into "always instant-timeout" or "never timeout",
+// both of which look exactly like a hung/broken model from the caller's side.
+function normalizeTimeoutMs(timeoutMs: number | undefined): number {
+  if (timeoutMs === undefined) {
+    return DEFAULT_TIMEOUT_MS;
+  }
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 }
 
 function withJsonInstruction(system: string | undefined, responseFormatJson: boolean | undefined): string | null {

@@ -14,7 +14,7 @@
  * 跑法：
  *   set -a && source ./.env.local && set +a
  *   npx tsx scripts/eval/reconciliation-redline-live.ts
- *   可选 RUNS=5 TEXT_MODEL=qwen-plus PROBE_TIMEOUT_MS=180000
+ *   可选 RUNS=5 TEXT_MODEL=qwen-plus PROBE_TIMEOUT_MS=<ms>（不设则吃 llmClient 生产默认值）
  */
 import { createLlmClient } from "../../src/domain/llmClient";
 import { reconcileFactVersions, type FactVersion } from "../../src/domain/factReconciliation";
@@ -167,7 +167,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
   const textModel = process.env.TEXT_MODEL?.trim() || "qwen-plus";
-  const timeoutMs = Number(process.env.PROBE_TIMEOUT_MS) || 180_000;
+  const timeoutMs = process.env.PROBE_TIMEOUT_MS ? Number(process.env.PROBE_TIMEOUT_MS) : undefined;
   const client = createLlmClient({ apiKey, textModel, timeoutMs });
 
   console.log("========== 任务① 调和层红线验证（真模型）==========");

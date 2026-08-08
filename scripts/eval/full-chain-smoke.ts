@@ -281,7 +281,7 @@ async function main(): Promise<void> {
     ? createLlmClient({
         apiKey,
         textModel: process.env.TEXT_MODEL?.trim() || "qwen-plus",
-        timeoutMs: Number(process.env.PROBE_TIMEOUT_MS) || 180_000
+        timeoutMs: process.env.PROBE_TIMEOUT_MS ? Number(process.env.PROBE_TIMEOUT_MS) : undefined
       })
     : createLlmClient({
         apiKey: "mock-key-not-a-real-secret",

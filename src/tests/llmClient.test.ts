@@ -49,6 +49,38 @@ describe("OpenAiCompatibleLlmClient", () => {
     await request;
   });
 
+  // A present-but-meaningless timeoutMs (what an eval script computes from a malformed
+  // PROBE_TIMEOUT_MS env var via `envValue ? Number(envValue) : undefined`) must fall back to the
+  // 240s default rather than degrading into instant-timeout or never-timeout — either of which is
+  // indistinguishable from the model provider itself being broken.
+  it.each([
+    ["abc", NaN],
+    ["0", 0],
+    ["-5", -5],
+    [" ", 0],
+    ["1e999", Infinity]
+  ] as const)("falls back to the 240-second default when PROBE_TIMEOUT_MS=%s parses to %s", async (envValue, _parsed) => {
+    vi.useFakeTimers();
+    const parsedTimeoutMs = envValue ? Number(envValue) : undefined;
+    const client = createLlmClient({
+      apiKey: "test-key",
+      timeoutMs: parsedTimeoutMs,
+      fetchImpl: (async (_input, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      })) as typeof fetch
+    });
+
+    const request = expect(client.completeText({ user: "hello" })).rejects.toMatchObject({ code: "timeout" });
+    await vi.advanceTimersByTimeAsync(239_999);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await request;
+  });
+
   it("uses an explicitly provided timeoutMs instead of the default", async () => {
     vi.useFakeTimers();
     const client = createLlmClient({
