@@ -259,6 +259,63 @@ describe("reconcileFactVersions", () => {
     expect(call.system).toContain("similarity number");
   });
 
+  it("复合记录形态：模型判 conflict 时不产 mergedValue、进 conflicts", async () => {
+    // 用户第三枪真机形态：一份简历把两段实习合起来写，另一份拆开写。
+    const composite: FactVersion = {
+      id: "k-merged",
+      category: "experience",
+      label: "幺米泛游／枫叶互动 | 剪辑与本地化实习生 | 2025.05-2026.01",
+      value: "负责短剧素材剪辑与海外本地化，覆盖多语言字幕与 AI 协作流程",
+      sourceType: "resume",
+      precedence: 0
+    };
+    const component: FactVersion = {
+      id: "k-part",
+      category: "experience",
+      label: "北京枫叶互动科技有限公司 | 视频剪辑 | 2025.05-2025.10",
+      value: "负责海外热门短剧的多语言本地化剪辑",
+      sourceType: "resume",
+      precedence: 0
+    };
+    const client = createMockClient(
+      JSON.stringify({
+        items: [
+          {
+            verdict: "conflict",
+            versionIds: ["k-merged", "k-part"],
+            rationale: "合并版的雇主字段含两个实体，拆分版是其中之一，是同一段历史的两种写法"
+          }
+        ]
+      })
+    );
+
+    const plan = await reconcileFactVersions({ versions: [composite, component], client });
+
+    expect(plan.items).toHaveLength(1);
+    expect(plan.items[0]!.verdict).toBe("conflict");
+    // 硬约束：不许拼接 —— 拼了就产出用户没写过的经历
+    expect(plan.items[0]!.mergedValue).toBeUndefined();
+    expect(plan.conflicts).toHaveLength(1);
+    expect(plan.conflicts[0]!.versionIds).toEqual(["k-merged", "k-part"]);
+  });
+
+  it("prompt 侧写明复合记录只许判 conflict（窄口径，不松老规则）", async () => {
+    const client = createMockClient("{\"items\":[]}");
+    await reconcileFactVersions({ versions: [RESUME_A, RESUME_B], client });
+
+    const call = (client.completeText as ReturnType<typeof vi.fn>).mock.calls[0]![0] as { system: string };
+    expect(call.system).toContain("COMPOSITE-RECORD RULE");
+    // 只许 conflict
+    expect(call.system).toContain('NEVER return "merge" or "supplement" for this form');
+    // 窄口径：触发条件是"字段字面含多个实体且另一条是其中之一"
+    expect(call.system).toContain("literally names two or more distinct entities");
+    expect(call.system).toContain("literally contains the other version's entity among several");
+    // 不满足触发条件时老规则原样生效
+    expect(call.system).toContain('the previous rule governs and the answer is still "distinct"');
+    // 老红线原句仍在
+    expect(call.system).toContain("NEVER the same thing");
+  });
+
   it("prompt 侧写明不同雇主/项目/学校永不算同一件事（D025 红线）", async () => {
     const client = createMockClient("{\"items\":[]}");
     await reconcileFactVersions({ versions: [RESUME_A, RESUME_B], client });

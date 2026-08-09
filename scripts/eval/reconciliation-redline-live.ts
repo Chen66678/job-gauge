@@ -21,7 +21,10 @@ import { reconcileFactVersions, type FactVersion } from "../../src/domain/factRe
 
 const RUNS = Number(process.env.RUNS) || 5;
 
-type Expect = "must_not_relate" | "should_relate" | "should_conflict";
+// must_conflict_only 比 should_conflict 严：除了要判 conflict 且进 plan.conflicts，
+// 还要求同一对 id 上不得同时出现 merge/supplement。
+// 复合记录形态必须用它 —— 那个形态一旦被判 merge，reconstructMergedValue 会拼出用户没写过的经历。
+type Expect = "must_not_relate" | "should_relate" | "should_conflict" | "must_conflict_only";
 
 interface Case {
   name: string;
@@ -103,6 +106,26 @@ CASES.push(
       V("x1", "戊安传媒有限公司 | 视频剪辑", "视频剪辑，2024.03-2024.09，共 7 个月"),
       V("x2", "戊安传媒有限公司 | 视频剪辑", "视频剪辑，做了将近两年", "user_answer")
     ]
+  },
+  {
+    name: "复合记录·合并版 vs 它的成分（该判 conflict，不许 merge）",
+    why: "用户第三枪真机形态：两份简历对同一段时期，一份合写、一份拆写。合并版雇主字段自带两个实体，旧规则会正确地拒绝关联 → 库里留两版认不出。只许 conflict：谁为准归用户（D036 §四），merge 会拼出用户没写过的经历",
+    expect: "must_conflict_only",
+    pair: ["k1", "k2"],
+    versions: [
+      V("k1", "幺米泛游／枫叶互动 | 剪辑与本地化实习生 | 2025.05-2026.01", "负责短剧素材剪辑与海外本地化，覆盖多语言字幕与 AI 协作流程"),
+      V("k2", "北京枫叶互动科技有限公司 | 视频剪辑 | 2025.05-2025.10", "负责海外热门短剧的多语言本地化剪辑")
+    ]
+  },
+  {
+    name: "红线③·复合记录 vs 完全无关的第三家（仍须不关联）",
+    why: "防止新规则被过度触发：合并版里没提到的公司，不因为『那条含多个实体』就被卷进来。这条守的是新规则的窄口径本身",
+    expect: "must_not_relate",
+    pair: ["k1b", "k3"],
+    versions: [
+      V("k1b", "幺米泛游／枫叶互动 | 剪辑与本地化实习生 | 2025.05-2026.01", "负责短剧素材剪辑与海外本地化，覆盖多语言字幕与 AI 协作流程"),
+      V("k3", "己诚文化传播有限公司 | 视频剪辑", "负责短剧素材剪辑与海外本地化，多语言字幕产出")
+    ]
   }
 );
 
@@ -144,6 +167,29 @@ function judge(c: Case, plan: Awaited<ReturnType<typeof reconcileFactVersions>>)
       return { ok: true, hard: false, detail: `判为 ${it.verdict}（正确）` };
     }
     return { ok: false, hard: false, detail: "漏合（软失败：该认出是同一件却没认出，D037 往严侧代价）" };
+  }
+
+  if (c.expect === "must_conflict_only") {
+    // 先查有没有被判成关联 —— 这是这个形态最危险的失败：merge 会让代码拼接两段原文，
+    // 产出用户从没写过的经历（比"没认出"严重得多，且不可逆）。
+    if (related.length > 0) {
+      return {
+        ok: false,
+        hard: true,
+        detail: `🔴 复合记录被判 ${related[0]!.verdict} —— 会拼出用户没写过的经历：${related[0]!.mergedValue?.slice(0, 60) ?? "(无 mergedValue)"}`
+      };
+    }
+    if (conflicted.length === 0) {
+      return { ok: false, hard: false, detail: "没认出是同一段历史的两种写法（软失败：库里会留两版）" };
+    }
+    if (!plan.conflicts.some((i) => i.versionIds.includes(a) && i.versionIds.includes(b))) {
+      return { ok: false, hard: true, detail: "🔴 判了 conflict 但没进 plan.conflicts —— 上层拿不到，等于自动裁决" };
+    }
+    // conflict 项不该带 mergedValue（带了说明代码侧也拼了）
+    if (conflicted.some((i) => i.mergedValue)) {
+      return { ok: false, hard: true, detail: "🔴 conflict 项带了 mergedValue —— 冲突不该产出合并文本" };
+    }
+    return { ok: true, hard: false, detail: "判 conflict、已进 conflicts、无 mergedValue（正确）" };
   }
 
   // should_conflict
