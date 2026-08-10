@@ -42,7 +42,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 /**
  * 一行简历内容的机器测量 + 人工标注。
  *
- * overreachType 枚举说明（D032 §二·附 + D005 边界）：
+ * verdict 取值说明（双向，D032 §二·附 + D005 边界）：
+ *   ok          : 强度/范围/角色与事实相符
+ *   overreach   : 说大了——拔高/扩范围/丢限定词/强度叠加
+ *   underclaim  : 说小了——事实存在但被降格/保守处理/主动收窄
+ *   fabricated  : 事实在事实库里根本不存在（比 overreach 更严重）
+ *
+ * overreachType 只在 verdict === "overreach" 时有意义：
  *   scope_expansion    : 范围扩大（"参与" → "负责整个模块"）
  *   role_elevation     : 角色拔高（"协助" → "主导"、"独立完成"）
  *   qualifier_dropped  : 限定词丢失（"课程项目"→"项目"、"原型"丢掉）
@@ -69,8 +75,9 @@ export interface RqAnnotationLine {
     verbatimMatchedFactId?: string;
   };
   annotation: {
-    /** null = 未标注。true = 有越界，false = 正常。 */
-    overreach: boolean | null;
+    /** null = 未标注。*/
+    verdict: "ok" | "overreach" | "underclaim" | "fabricated" | null;
+    /** 仅 verdict === "overreach" 时填写。*/
     overreachType: "scope_expansion" | "role_elevation" | "qualifier_dropped" | "strength_stacked" | null;
     note: string | null;
   };
@@ -102,8 +109,10 @@ export interface RqSample {
   lines: RqAnnotationLine[];
   /** 样本级人工标注：填完 lines 之后再填这里。 */
   sampleAnnotation: {
-    /** 全部行里判为越界的行数，由用户数完 lines 后填入。 */
+    /** verdict === "overreach" 或 "fabricated" 的行数。 */
     overreachLineCount: number | null;
+    /** verdict === "underclaim" 的行数。 */
+    underclaimLineCount: number | null;
     verbatimRateOk: boolean | null;
     thicknessOk: boolean | null;
     verdict: "pass" | "fail" | "borderline" | null;
@@ -264,7 +273,7 @@ async function main(): Promise<void> {
         ...(copyCheck.matchedFactId ? { verbatimMatchedFactId: copyCheck.matchedFactId } : {})
       },
       annotation: {
-        overreach: null,
+        verdict: null,
         overreachType: null,
         note: null
       }
@@ -293,7 +302,7 @@ async function main(): Promise<void> {
   console.log(`使用 confirmed 事实：${usedFactIds.size}/${confirmedFacts.length} 条`);
   console.log(`\n── 需人工标注的维度 ──`);
   console.log(
-    `越界行数：待你在输出 JSON 里逐行标注 annotation.overreach，填完后数一数 true 的行数，填进 sampleAnnotation.overreachLineCount。`
+    `逐行标注 annotation.verdict：ok / overreach / underclaim / fabricated。`
   );
   console.log(`判据：这件事实够不够格支撑这个强度？（不是"词在不在原文"，见 rq-annotation-guide.md）`);
 
@@ -322,6 +331,7 @@ async function main(): Promise<void> {
     lines: annotationLines,
     sampleAnnotation: {
       overreachLineCount: null,
+      underclaimLineCount: null,
       verbatimRateOk: null,
       thicknessOk: null,
       verdict: null,
@@ -342,10 +352,10 @@ async function main(): Promise<void> {
     `2. 逐行看 lines[].text，对照 lines[].referencedFacts[].value，判断"这件事实够不够格支撑这个强度"`
   );
   console.log(
-    `3. 把 annotation.overreach 改成 true（越界）或 false（正常）；如有必要填 overreachType 和 note`
+    `3. 逐行把 annotation.verdict 填成 ok/overreach/underclaim/fabricated；overreach 时可选填 overreachType 和 note`
   );
   console.log(
-    `4. 填完所有行后，在 sampleAnnotation 里填 overreachLineCount / verbatimRateOk / thicknessOk / verdict`
+    `4. 填完所有行后，在 sampleAnnotation 里填 overreachLineCount / underclaimLineCount / verbatimRateOk / thicknessOk / verdict`
   );
   console.log(`5. 把文件路径/内容贴回首席即可（文件已在 _private/ 下，不会进仓库）`);
   console.log(`\n参考：首个真值样本（「首创」类）→ scripts/eval/rq-annotation-guide.md`);
