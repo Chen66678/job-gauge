@@ -601,6 +601,67 @@ describe("coreApi", () => {
     expect(retried.material).toEqual(material);
   });
 
+  it("[第2件] 首次评估时 materialStale 为 false（没有旧材料可以过期）", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+
+    const record = await api.evaluateJobFromJd({
+      jdText: "要求 React 组件开发。",
+      jobBase: { title: "前端工程师", company: "样例科技", city: "上海", salaryK: [20, 30], companyTags: ["SaaS"] }
+    });
+
+    expect(record.material).toBeNull();
+    expect(record.materialStale).toBe(false);
+  });
+
+  it("[第2件] 重采同一岗位时已生成的 material 不被清空，标 materialStale=true 而非删除", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    const jobBase = {
+      title: "前端工程师", company: "样例科技", city: "上海",
+      salaryK: [20, 30] as [number, number], companyTags: ["SaaS"]
+    };
+
+    const first = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+    const draftedMaterial = await api.draftMaterial(first.job.id);
+    expect(draftedMaterial).not.toBeNull();
+
+    const afterFirstDraft = api.getState().jobs.find((r) => r.job.id === first.job.id);
+    expect(afterFirstDraft?.material).toEqual(draftedMaterial);
+    expect(afterFirstDraft?.materialStale).toBe(false);
+
+    // 重采（浏览器插件经过同一岗位再次触发）：评估重跑
+    const rescrape = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+
+    // 材料必须保留，不能被 null 掉
+    expect(rescrape.material).toEqual(draftedMaterial);
+    // 但必须标记为过期，不得照常展示为正常材料
+    expect(rescrape.materialStale).toBe(true);
+  });
+
+  it("[第2件] 重采同一岗位时已有的 followUps 不被清空为空数组", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    const jobBase = {
+      title: "前端工程师", company: "样例科技", city: "上海",
+      salaryK: [20, 30] as [number, number], companyTags: ["SaaS"]
+    };
+
+    const first = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+
+    const questions = buildQuestions();
+    orchestrationMocks.buildFollowUps.mockResolvedValueOnce(questions);
+    await api.buildFollowUps(first.job.id);
+    const beforeRescrape = api.getState().jobs.find((r) => r.job.id === first.job.id);
+    expect(beforeRescrape?.followUps).toEqual(questions);
+
+    // 重采评估成功：followUps 应保留，不被清空
+    const rescrape = await api.evaluateJobFromJd({ jdText: "要求 React 组件开发。", jobBase });
+    expect(rescrape.followUps).toEqual(questions);
+    // materialStale 标 true（因为有保留的 followUps）
+    expect(rescrape.materialStale).toBe(true);
+  });
+
   it("[D026] applies follow-up answers as confirmed facts and persists them", async () => {
     const storage = new MemoryStorage();
     const api = createCoreApi({ client: createClient(), storage });
@@ -710,6 +771,7 @@ describe("coreApi", () => {
       material: buildMaterial(),
       collectedAt: new Date().toISOString(),
       evaluationStale: false,
+      materialStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -755,6 +817,7 @@ describe("coreApi", () => {
       material: buildMaterial(),
       collectedAt: new Date().toISOString(),
       evaluationStale: false,
+      materialStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -804,6 +867,7 @@ describe("coreApi", () => {
       material,
       collectedAt: new Date().toISOString(),
       evaluationStale: false,
+      materialStale: false,
       updatedAt: new Date().toISOString()
     };
     storage.setItem(
@@ -1063,7 +1127,7 @@ describe("automatic reevaluation scope", () => {
         requirements: [buildRequirement()], risks: [], reviewFlags: [], pinned, workAddress: null, sourceUrl: null
       },
       evaluation: { vetoed: false, score: buildScoreResult() }, evaluationError: null, followUps: [], material: null,
-      collectedAt, evaluationStale: false, updatedAt: collectedAt
+      collectedAt, evaluationStale: false, materialStale: false, updatedAt: collectedAt
     });
     storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
       schemaVersion: 1,
@@ -1112,7 +1176,7 @@ describe("fact fingerprint", () => {
       },
       evaluation: { vetoed: false, score: buildScoreResult() },
       evaluationError: null, followUps: [], material: null,
-      collectedAt: COLLECTED, evaluationStale: false, updatedAt: COLLECTED,
+      collectedAt: COLLECTED, evaluationStale: false, materialStale: false, updatedAt: COLLECTED,
       ...extras
     };
   }

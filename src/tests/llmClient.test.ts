@@ -236,22 +236,47 @@ describe("OpenAiCompatibleLlmClient", () => {
     });
   });
 
-  it("maps auth failures from 401 and 403", async () => {
+  it("maps auth failures from 401", async () => {
     const unauthorized = createLlmClient({
       apiKey: "test-key",
       fetchImpl: (async () => jsonResponse(401, { error: "unauthorized" })) as typeof fetch
-    });
-    const forbidden = createLlmClient({
-      apiKey: "test-key",
-      fetchImpl: (async () => jsonResponse(403, { error: "forbidden" })) as typeof fetch
     });
 
     await expect(unauthorized.completeText({ user: "hello" })).rejects.toMatchObject({
       code: "auth_failed",
       status: 401
     });
+  });
+
+  it("maps 403 with a quota-shaped vendor code to quota_exceeded, not auth_failed", async () => {
+    const quotaExhausted = createLlmClient({
+      apiKey: "test-key",
+      fetchImpl: (async () =>
+        jsonResponse(403, { error: { code: "AllocationQuota.FreeTierOnly", message: "Free tier quota exhausted." } })) as typeof fetch
+    });
+
+    await expect(quotaExhausted.completeText({ user: "hello" })).rejects.toMatchObject({
+      code: "quota_exceeded",
+      status: 403
+    });
+  });
+
+  it("maps 403 without a quota-shaped vendor code to permission_denied, not auth_failed", async () => {
+    const forbidden = createLlmClient({
+      apiKey: "test-key",
+      fetchImpl: (async () => jsonResponse(403, { error: { code: "Forbidden.WhiteList", message: "Not whitelisted." } })) as typeof fetch
+    });
+    const noBody = createLlmClient({
+      apiKey: "test-key",
+      fetchImpl: (async () => jsonResponse(403, null)) as typeof fetch
+    });
+
     await expect(forbidden.completeText({ user: "hello" })).rejects.toMatchObject({
-      code: "auth_failed",
+      code: "permission_denied",
+      status: 403
+    });
+    await expect(noBody.completeText({ user: "hello" })).rejects.toMatchObject({
+      code: "permission_denied",
       status: 403
     });
   });

@@ -452,7 +452,8 @@ export function createCoreApi(deps: {
         material: previous?.material ?? null,
         updatedAt: new Date().toISOString(),
         collectedAt: previous?.collectedAt ?? new Date().toISOString(),
-        evaluationStale: false
+        evaluationStale: false,
+        materialStale: previous?.materialStale ?? false
       };
       persist(upsertJobRecord(state, baseRecord));
 
@@ -500,11 +501,12 @@ export function createCoreApi(deps: {
                   score: evaluation.score
                 },
             evaluationError: null,
-            followUps: [],
-            material: null,
+            followUps: previous?.followUps ?? [],
+            material: previous?.material ?? null,
             updatedAt: new Date().toISOString(),
             collectedAt: previous?.collectedAt ?? new Date().toISOString(),
             evaluationStale: false,
+            materialStale: previous?.material != null || (previous?.followUps?.length ?? 0) > 0,
             evaluatedFactFingerprint: computeConfirmedFactsFingerprint(state)
           };
 
@@ -523,7 +525,8 @@ export function createCoreApi(deps: {
                 material: null,
                 updatedAt: new Date().toISOString(),
                 collectedAt: new Date().toISOString(),
-                evaluationStale: false
+                evaluationStale: false,
+                materialStale: false
               };
           persist(upsertJobRecord(state, failedRecord));
           return getJobRecord(state, baseJob.id) ?? failedRecord;

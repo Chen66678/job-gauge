@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CORE_STATE_STORAGE_KEY,
+  applyReconciliationPlan,
   clearCoreState,
   createEmptyCoreState,
   deleteFact,
@@ -21,6 +22,7 @@ import {
 } from "../domain/coreState";
 import type { CoreJobRecord, CorePreferences } from "../domain/coreState";
 import type { ProfileFact } from "../types";
+import type { ReconciliationPlan } from "../domain/factReconciliation";
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -122,6 +124,7 @@ function buildJobRecord(): CoreJobRecord {
     material: null,
     collectedAt: "2026-07-07T00:00:00.000Z",
     evaluationStale: false,
+    materialStale: false,
     updatedAt: "2026-07-07T00:00:00.000Z"
   };
 }
@@ -276,5 +279,59 @@ describe("factGroups (D034 父子分组)", () => {
 
     expect(state.factGroups.map((group) => group.id)).toEqual(["group-1"]);
     expect(getConfirmedFacts(state).some((fact) => fact.groupId === "group-1")).toBe(false);
+  });
+
+  it("同一家公司被拆成三个 group 时，applyReconciliationPlan 的 merge/supplement 把三个 group 合成一个（首席撤销 08-06 旧论后的新裁定）", () => {
+    let state = upsertFactGroups(createEmptyCoreState(), [
+      { id: "group-a", category: "经历", label: "华开家办圈（北京）文化传媒有限公司 | AI Agent 工作流实习生 | 2026.06-至今" },
+      { id: "group-b", category: "经历", label: "华开家办圈（北京）文化传媒有限公司 | AI Agent 工作流实习生 | 2026.06-至今" },
+      { id: "group-c", category: "经历", label: "华开家办圈（北京）文化传媒有限公司 | AI 工作流实习生 | 2026.06-至今" }
+    ]);
+    state = upsertFacts(state, [
+      buildFact({ id: "fact-a", label: "职责描述", value: "负责 AI Agent 工作流搭建", status: "confirmed", groupId: "group-a" }),
+      buildFact({ id: "fact-a2", label: "另一条职责", value: "维护工作流脚本", status: "confirmed", groupId: "group-a" }),
+      buildFact({ id: "fact-b", label: "职责描述", value: "负责 AI Agent 工作流搭建", status: "confirmed", groupId: "group-b" }),
+      buildFact({ id: "fact-c", label: "职责描述", value: "负责 AI 工作流搭建", status: "confirmed", groupId: "group-c" })
+    ]);
+
+    const plan: ReconciliationPlan = {
+      unusable: false,
+      conflicts: [],
+      items: [
+        {
+          verdict: "merge",
+          versionIds: ["fact-a", "fact-b", "fact-c"],
+          rationale: "同一份实习经历的重复抽取",
+          mergedValue: "负责 AI Agent 工作流搭建",
+          mergedLabel: "职责描述",
+          mergedCategory: "经历"
+        }
+      ]
+    };
+
+    const next = applyReconciliationPlan(state, plan);
+
+    // fact-a 排在 nextFactLibrary 最前，是既有存活逻辑选中的存活事实——它的 group-a 是存活 group。
+    expect(next.factGroups.map((group) => group.id)).toEqual(["group-a"]);
+    expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-a", "fact-a2"]);
+    expect(next.factLibrary.every((fact) => fact.groupId === "group-a" || fact.groupId === null)).toBe(true);
+    // 未被合并、但原属被吞并 group 的事实（fact-a2 与 group-a 同组，非本次合并对象）依旧留在存活 group 下。
+    expect(next.factLibrary.find((fact) => fact.id === "fact-a2")?.groupId).toBe("group-a");
+  });
+
+  it("⚠ 反向约束：group 相同/相似不得作为合并事实的信号——applyReconciliationPlan 只按 plan.items 的 verdict 动手，从不读 group", () => {
+    let state = upsertFactGroups(createEmptyCoreState(), [
+      { id: "group-x", category: "经历", label: "同一家公司" }
+    ]);
+    state = upsertFacts(state, [
+      buildFact({ id: "fact-x1", label: "职责一", value: "职责一原文", status: "confirmed", groupId: "group-x" }),
+      buildFact({ id: "fact-x2", label: "职责二", value: "职责二原文", status: "confirmed", groupId: "group-x" })
+    ]);
+
+    const plan: ReconciliationPlan = { unusable: false, conflicts: [], items: [] };
+    const next = applyReconciliationPlan(state, plan);
+
+    expect(next).toBe(state);
+    expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-x1", "fact-x2"]);
   });
 });

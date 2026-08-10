@@ -3,6 +3,8 @@ import { isRecord } from "./shared";
 export type LlmClientErrorCode =
   | "timeout"
   | "auth_failed"
+  | "permission_denied"
+  | "quota_exceeded"
   | "rate_limited"
   | "network_failure"
   | "invalid_response";
@@ -135,7 +137,13 @@ export class OpenAiCompatibleLlmClient {
       }
 
       if (!response.ok) {
-        throw mapHttpError(response.status);
+        let errorBody: unknown = null;
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = null;
+        }
+        throw mapHttpError(response.status, errorBody);
       }
 
       let payload: unknown;
@@ -243,14 +251,31 @@ function mapTransportError(error: unknown): LlmClientError {
   return new LlmClientError("network_failure", "Unable to reach the model provider.");
 }
 
-function mapHttpError(status: number): LlmClientError {
-  if (status === 401 || status === 403) {
+function mapHttpError(status: number, body: unknown): LlmClientError {
+  if (status === 401) {
     return new LlmClientError("auth_failed", "Model provider rejected the API key.", status);
+  }
+  if (status === 403) {
+    // 401 = 凭证本身无效；403 = 凭证有效但被拒绝，原因不止一种（额度耗尽 vs 权限/白名单），
+    // 不能再和 401 共用同一个 code——否则用户会被引导去检查一个跟真实原因无关的东西。
+    if (isQuotaVendorCode(body)) {
+      return new LlmClientError("quota_exceeded", "Model provider reported the quota for this model is exhausted.", status);
+    }
+    return new LlmClientError("permission_denied", "Model provider denied access to this model.", status);
   }
   if (status === 429) {
     return new LlmClientError("rate_limited", "Model provider rate limited the request.", status);
   }
   return new LlmClientError("invalid_response", `Model provider returned HTTP ${status}.`, status);
+}
+
+// 已确认的供应商证据（本项目实测，见 sediment/product/handoff-2026-08-06.md:37）：
+// DashScope 免费额度按模型单独计算，耗尽时返回 403，vendor code 形如 `AllocationQuota.FreeTierOnly`。
+// 未识别的 vendor code（或没有 body）不当作额度问题猜测，退回更保守的 permission_denied。
+function isQuotaVendorCode(body: unknown): boolean {
+  if (!isRecord(body) || !isRecord(body.error)) return false;
+  const vendorCode = body.error.code;
+  return typeof vendorCode === "string" && /quota/i.test(vendorCode);
 }
 
 function isAbortError(error: unknown): boolean {

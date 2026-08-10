@@ -60,6 +60,12 @@ export interface CoreJobRecord {
   collectedAt: string;
   /** 偏好或简历更新后，原评分不能再作为当前评分展示。 */
   evaluationStale: boolean;
+  /**
+   * 重采同一岗位（JD 变了/评估重跑）后，既有 material/followUps 是基于旧评估生成的，
+   * 可能已经不准——标记，不删除（首席裁定：不许把已生成、已确认的材料清空重来）。
+   * 是否需要重新生成由用户决定；界面不得把它当普通材料一样正常展示（视觉归设计域）。
+   */
+  materialStale: boolean;
   /** 最近一次成功评估时已确认事实 id 集合的有序指纹；缺失视为不匹配。 */
   evaluatedFactFingerprint?: string;
   updatedAt: string;
@@ -250,6 +256,16 @@ export function deleteFact(state: CoreState, factId: string): CoreState {
  * conflict：只登记进 factConflicts，不动 factLibrary 一个字——三种归档语义 D036 §四未定，
  * 本函数不许替用户/首席拍板。
  *
+ * groupId：groupKey 是模型每次抽取临时生成的，跨次不稳，同一家公司常年被拆成好几个
+ * group（首席裁定，撤销 08-06 的"groupKey 已被架空"旧论）。merge/supplement 落库时，
+ * 如果被合并的事实分属不同 group，这些 group 必须合成一个——保存活事实的 group，
+ * 其余 group 的全部子事实（不止本条被合并的，同组的其它事实也一起）改挂过去，合并
+ * 后清空的 group 从 factGroups 删掉。这只是"事实判定为同一件事"这个已有模型判断在
+ * 结构上必然的推论（同一事实不能同时挂两个父级），不许反过来用"group 相同/相似"去
+ * 推"事实该合并"——本函数从不读 group 去决定 verdict，verdict 完全来自 plan.items。
+ * 若存活事实本来没分组而被合并的一方有，借用被合并一方的 group（否则合并后从有分组
+ * 退化成无分组）。
+ *
  * plan.unusable 为 true 时 items 本就是空的（fail-closed 在模块内已保证），这里原样跳过。
  */
 export function applyReconciliationPlan(state: CoreState, plan: ReconciliationPlan): CoreState {
@@ -258,6 +274,7 @@ export function applyReconciliationPlan(state: CoreState, plan: ReconciliationPl
   }
 
   let nextFactLibrary = state.factLibrary;
+  let nextFactGroups = state.factGroups;
   for (const item of plan.items) {
     if (item.verdict !== "merge" && item.verdict !== "supplement") {
       continue;
@@ -277,18 +294,40 @@ export function applyReconciliationPlan(state: CoreState, plan: ReconciliationPl
     const survivorId = survivor.id;
     const absorbedIds = item.versionIds.filter((id) => id !== survivorId);
     const absorbedSet = new Set(absorbedIds);
+    const absorbedFacts = nextFactLibrary.filter((fact) => absorbedSet.has(fact.id));
+
+    let survivingGroupId = survivor.groupId;
+    if (survivingGroupId === null) {
+      const donor = absorbedFacts.find((fact) => fact.groupId !== null);
+      survivingGroupId = donor?.groupId ?? null;
+    }
+    const obsoleteGroupIds = new Set(
+      absorbedFacts
+        .map((fact) => fact.groupId)
+        .filter((groupId): groupId is string => groupId !== null && groupId !== survivingGroupId)
+    );
+
     nextFactLibrary = nextFactLibrary
       .filter((fact) => !absorbedSet.has(fact.id))
-      .map((fact) =>
-        fact.id === survivorId
-          ? {
-              ...fact,
-              value: item.mergedValue as string,
-              label: item.mergedLabel ?? fact.label,
-              category: item.mergedCategory ?? fact.category
-            }
-          : fact
-      );
+      .map((fact) => {
+        if (fact.id === survivorId) {
+          return {
+            ...fact,
+            value: item.mergedValue as string,
+            label: item.mergedLabel ?? fact.label,
+            category: item.mergedCategory ?? fact.category,
+            groupId: survivingGroupId
+          };
+        }
+        if (fact.groupId !== null && obsoleteGroupIds.has(fact.groupId)) {
+          return { ...fact, groupId: survivingGroupId };
+        }
+        return fact;
+      });
+
+    if (obsoleteGroupIds.size > 0) {
+      nextFactGroups = nextFactGroups.filter((group) => !obsoleteGroupIds.has(group.id));
+    }
   }
 
   let nextFactConflicts = state.factConflicts;
@@ -296,10 +335,19 @@ export function applyReconciliationPlan(state: CoreState, plan: ReconciliationPl
     nextFactConflicts = registerFactConflict(nextFactConflicts, conflict.versionIds, conflict.rationale);
   }
 
-  if (nextFactLibrary === state.factLibrary && nextFactConflicts === state.factConflicts) {
+  if (
+    nextFactLibrary === state.factLibrary &&
+    nextFactGroups === state.factGroups &&
+    nextFactConflicts === state.factConflicts
+  ) {
     return state;
   }
-  return withUpdatedAt({ ...state, factLibrary: nextFactLibrary, factConflicts: nextFactConflicts });
+  return withUpdatedAt({
+    ...state,
+    factLibrary: nextFactLibrary,
+    factGroups: nextFactGroups,
+    factConflicts: nextFactConflicts
+  });
 }
 
 function registerFactConflict(conflicts: FactConflict[], factIds: string[], rationale: string): FactConflict[] {
@@ -436,6 +484,7 @@ function isCoreJobRecord(value: unknown): value is CoreJobRecord {
     (value.preScreenResult === null || value.preScreenResult === undefined || isKeywordPreScreenResult(value.preScreenResult)) &&
     (value.collectedAt === undefined || typeof value.collectedAt === "string") &&
     (value.evaluationStale === undefined || typeof value.evaluationStale === "boolean") &&
+    (value.materialStale === undefined || typeof value.materialStale === "boolean") &&
     (value.evaluatedFactFingerprint === undefined || typeof value.evaluatedFactFingerprint === "string") &&
     typeof value.updatedAt === "string"
   );
@@ -460,7 +509,8 @@ function normalizeCoreState(state: CoreState): CoreState {
     jobs: state.jobs.map((record) => ({
       ...record,
       collectedAt: record.collectedAt ?? record.updatedAt,
-      evaluationStale: record.evaluationStale ?? false
+      evaluationStale: record.evaluationStale ?? false,
+      materialStale: record.materialStale ?? false
     }))
   };
 }
