@@ -92,7 +92,9 @@ function createUnavailableLlmClient() {
 const renderResumeImage = createResumeImageRenderer(buildResumeImageHtml);
 
 function buildClientForKey(apiKey) {
-  return apiKey ? createLlmClient({ apiKey }) : createUnavailableLlmClient();
+  if (!apiKey) return createUnavailableLlmClient();
+  const baseUrl = process.env.LLM_BASE_URL || undefined;
+  return createLlmClient({ apiKey, ...(baseUrl ? { baseUrl } : {}) });
 }
 
 // 密文落盘必须原子替换（契约 §4.133.3）：先写临时文件再 rename，避免中间
@@ -152,7 +154,8 @@ function createMainCoreApi() {
     fileIO: byokFileIO,
     getEnvApiKey: () => process.env.DASHSCOPE_API_KEY,
     probeApiKey: async (apiKey) => {
-      const probeClient = createLlmClient({ apiKey });
+      const baseUrl = process.env.LLM_BASE_URL || undefined;
+      const probeClient = createLlmClient({ apiKey, ...(baseUrl ? { baseUrl } : {}) });
       await probeClient.completeText(BYOK_PROBE_REQUEST);
     },
     onActiveKeyChanged: (result) => {
