@@ -18,14 +18,14 @@ function summarizeFact(value: string) {
   return normalized.length > 96 ? `${normalized.slice(0, 96)}…` : normalized
 }
 
-function dataUrlToBytes(dataUrl: string) {
+export function dataUrlToBytes(dataUrl: string) {
   const base64 = dataUrl.split(',', 2)[1]
   if (!base64) throw new Error('简历图片数据无效，无法导出 PDF。')
   const binary = window.atob(base64)
   return Uint8Array.from(binary, character => character.charCodeAt(0))
 }
 
-function buildPdfFromJpeg(jpegDataUrl: string, imageWidth: number, imageHeight: number) {
+export function buildPdfFromJpeg(jpegDataUrl: string, imageWidth: number, imageHeight: number) {
   const jpegBytes = dataUrlToBytes(jpegDataUrl)
   const pageWidth = (imageWidth * 72) / 96
   const pageHeight = (imageHeight * 72) / 96
