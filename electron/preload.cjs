@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld("coreApi", {
   clear: () => invokeCoreApi("clear"),
   addManualFact: (input) => invokeCoreApi("addManualFact", input),
   clearFactLibrary: () => invokeCoreApi("clearFactLibrary"),
+  clearJobs: () => invokeCoreApi("clearJobs"),
   deleteFact: (factId) => invokeCoreApi("deleteFact", factId),
   deleteFactGroup: (groupId) => invokeCoreApi("deleteFactGroup", groupId),
   getReconciliationPreview: () => invokeCoreApi("getReconciliationPreview"),

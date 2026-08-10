@@ -111,6 +111,7 @@ declare global {
       getLocalApiToken: () => Promise<{ token: string }>
       renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
       openExternalUrl: (url: string) => Promise<CoreApiResult<void>>
+      clearJobs: () => Promise<CoreApiResult<void>>
     }
   }
 }
@@ -527,6 +528,8 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   const [sortBy, setSortBy] = useState<'score' | 'time' | 'salary'>('score')
   const [stalePreview, setStalePreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
   const [batchReevaluating, setBatchReevaluating] = useState(false)
+  const [clearJobsConfirming, setClearJobsConfirming] = useState(false)
+  const [clearJobsError, setClearJobsError] = useState<string | null>(null)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const reevaluationPendingSeenRef = useRef<Set<string>>(new Set())
 
@@ -538,6 +541,16 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
       .then(setStalePreview)
       .catch(reason => setError(errorText(reason)))
   }, [])
+
+  const clearAllJobs = async () => {
+    setClearJobsError(null)
+    try {
+      unwrap(await window.coreApi.clearJobs())
+      setClearJobsConfirming(false)
+    } catch (reason) {
+      setClearJobsError(errorText(reason))
+    }
+  }
 
   const handleReevaluateRemaining = useCallback(() => {
     if (!stalePreview || stalePreview.jobCount === 0) return
@@ -760,6 +773,18 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
               <div className="spinner" />
               正在评估 {evaluatingCount} 个岗位…
             </>
+          )}
+          {jobs.length > 0 && (
+            clearJobsConfirming
+              ? <div style={{ padding: '8px 12px', border: '1px solid var(--red-border)', borderRadius: 8, background: 'var(--red-bg)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <p style={{ color: 'var(--red-deep)', margin: 0 }}>将清空全部 {jobs.length} 条岗位（含置顶）。简历事实库和偏好设置不受影响。确定清空吗？</p>
+                  {clearJobsError && <p style={{ color: 'var(--red-deep)', margin: 0, fontSize: 12 }}>{clearJobsError}</p>}
+                  <div>
+                    <button type="button" onClick={() => void clearAllJobs()}>确认清空</button>
+                    <button type="button" style={{ marginLeft: 8 }} onClick={() => { setClearJobsConfirming(false); setClearJobsError(null) }}>取消</button>
+                  </div>
+                </div>
+              : <button type="button" onClick={() => setClearJobsConfirming(true)}>清空岗位列表</button>
           )}
         </div>
       </div>

@@ -245,6 +245,7 @@ function registerCoreApiHandlers(core) {
   invoke("clear", () => core.api.clear());
   invoke("addManualFact", (input) => core.api.addManualFact(input));
   invoke("clearFactLibrary", () => core.api.clearFactLibrary());
+  invoke("clearJobs", () => core.api.clearJobs());
   invoke("deleteFact", (factId) => core.api.deleteFact(factId));
   invoke("deleteFactGroup", (groupId) => core.api.deleteFactGroup(groupId));
   invoke("getReconciliationPreview", () => core.api.getReconciliationPreview());

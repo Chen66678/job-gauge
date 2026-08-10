@@ -18,7 +18,8 @@ import {
   setPreferences,
   upsertFactGroups,
   upsertFacts,
-  upsertJobRecord
+  upsertJobRecord,
+  clearJobs
 } from "../domain/coreState";
 import type { CoreJobRecord, CorePreferences } from "../domain/coreState";
 import type { ProfileFact } from "../types";
@@ -333,5 +334,48 @@ describe("factGroups (D034 父子分组)", () => {
 
     expect(next).toBe(state);
     expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-x1", "fact-x2"]);
+  });
+});
+
+describe("clearJobs (pure state function)", () => {
+  it("removes all jobs and returns a new state object", () => {
+    const record = buildJobRecord();
+    const state = upsertJobRecord(createEmptyCoreState(), record);
+    expect(state.jobs).toHaveLength(1);
+
+    const next = clearJobs(state);
+    expect(next.jobs).toHaveLength(0);
+    expect(next).not.toBe(state);
+  });
+
+  it("clears pinned jobs along with normal ones (semantic #1)", () => {
+    const pinned = { ...buildJobRecord(), job: { ...buildJobRecord().job, id: "pinned-1", pinned: true } };
+    const normal = { ...buildJobRecord(), job: { ...buildJobRecord().job, id: "normal-1", pinned: false } };
+    let state = upsertJobRecord(createEmptyCoreState(), pinned);
+    state = upsertJobRecord(state, normal);
+    expect(state.jobs).toHaveLength(2);
+
+    const next = clearJobs(state);
+    expect(next.jobs).toHaveLength(0);
+  });
+
+  it("leaves factLibrary, factGroups, factConflicts, and preferences completely untouched (semantic #3)", () => {
+    const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发" });
+    let state = upsertFacts(createEmptyCoreState(), [fact]);
+    state = upsertFactGroups(state, [{ id: "group-1", category: "技能", label: "前端" }]);
+    state = upsertJobRecord(state, buildJobRecord());
+
+    const next = clearJobs(state);
+    expect(next.jobs).toHaveLength(0);
+    expect(next.factLibrary).toHaveLength(1);
+    expect(next.factGroups).toHaveLength(1);
+    expect(next.factConflicts).toEqual(state.factConflicts);
+  });
+
+  it("stamps updatedAt on the returned state", () => {
+    const state = upsertJobRecord(createEmptyCoreState(), buildJobRecord());
+    const before = state.updatedAt;
+    const next = clearJobs(state);
+    expect(next.updatedAt >= before).toBe(true);
   });
 });

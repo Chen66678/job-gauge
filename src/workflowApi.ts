@@ -71,6 +71,7 @@ export type WorkflowApi = {
   exportResume: (jobId: string) => Promise<CoreApiResult<string>>
   addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
   clearFactLibrary: () => Promise<CoreApiResult<void>>
+  clearJobs: () => Promise<CoreApiResult<void>>
   deleteFact: (factId: string) => Promise<CoreApiResult<void>>
   deleteFactGroup: (groupId: string) => Promise<CoreApiResult<void>>
   getReconciliationPreview: () => Promise<CoreApiResult<ReconciliationPreview>>

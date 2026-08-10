@@ -1308,3 +1308,108 @@ describe("fact fingerprint", () => {
     expect(api.getState().jobs[0].evaluationStale).toBe(false);
   });
 });
+
+describe("clearJobs", () => {
+  const COLLECTED = "2026-08-10T00:00:00.000Z";
+
+  function makeJobRecord(id: string, extras: Partial<CoreJobRecord> = {}): CoreJobRecord {
+    return {
+      job: {
+        id, title: "前端工程师", company: "测试公司", city: "上海",
+        salaryK: [20, 30] as [number, number], companyTags: [],
+        jdText: "要求 React 开发", requirements: [buildRequirement()],
+        risks: [], reviewFlags: [], pinned: false, workAddress: null, sourceUrl: null
+      },
+      evaluation: null, evaluationError: null,
+      followUps: [], material: null,
+      collectedAt: COLLECTED, evaluationStale: false, materialStale: false,
+      updatedAt: COLLECTED,
+      ...extras
+    };
+  }
+
+  it("removes all jobs from state (semantic #1 base)", async () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+
+    await api.evaluateJobFromJd({
+      jdText: "要求 React 开发",
+      jobBase: { title: "前端工程师", company: "测试公司", city: "上海", salaryK: [20, 30], companyTags: [] }
+    });
+    expect(api.getState().jobs).toHaveLength(1);
+
+    api.clearJobs();
+    expect(api.getState().jobs).toHaveLength(0);
+  });
+
+  it("clears pinned jobs — pinned flag is not a deletion lock (semantic #1)", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1, updatedAt: COLLECTED, factLibrary: [], preferences: null,
+      jobs: [
+        makeJobRecord("normal-1"),
+        { ...makeJobRecord("pinned-1"), job: { ...makeJobRecord("pinned-1").job, pinned: true } }
+      ]
+    }));
+    const api = createCoreApi({ client: createClient(), storage });
+    expect(api.getState().jobs).toHaveLength(2);
+
+    api.clearJobs();
+    expect(api.getState().jobs).toHaveLength(0);
+  });
+
+  it("evaluation, material, and followUps are gone because the whole record is removed (semantic #2)", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1, updatedAt: COLLECTED, factLibrary: [], preferences: null,
+      jobs: [{
+        ...makeJobRecord("job-with-material"),
+        evaluation: { vetoed: false, score: buildScoreResult() },
+        material: buildMaterial(),
+        followUps: buildQuestions()
+      }]
+    }));
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearJobs();
+    expect(api.getState().jobs).toHaveLength(0);
+  });
+
+  it("factLibrary, factGroups, factConflicts, and preferences are completely untouched (semantic #3)", () => {
+    const storage = new MemoryStorage();
+    const api = createCoreApi({ client: createClient(), storage });
+    api.addManualFact({ content: "会 React", category: "技能" });
+    api.addManualFact({ content: "会 TypeScript", category: "技能" });
+    const factsBefore = api.getState().factLibrary;
+
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      ...JSON.parse(storage.getItem(CORE_STATE_STORAGE_KEY)!),
+      jobs: [makeJobRecord("job-1")]
+    }));
+    // reload
+    const api2 = createCoreApi({ client: createClient(), storage });
+    expect(api2.getState().jobs).toHaveLength(1);
+    expect(api2.getState().factLibrary).toHaveLength(factsBefore.length);
+
+    api2.clearJobs();
+    expect(api2.getState().jobs).toHaveLength(0);
+    expect(api2.getState().factLibrary).toHaveLength(factsBefore.length);
+    expect(api2.getState().preferences).toBeNull();
+  });
+
+  it("does not trigger re-evaluation after clearing (semantic #4)", () => {
+    const storage = new MemoryStorage();
+    const evaluateJob = orchestrationMocks.evaluateJob;
+    evaluateJob.mockClear();
+
+    storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1, updatedAt: COLLECTED, factLibrary: [], preferences: null,
+      jobs: [makeJobRecord("job-1")]
+    }));
+    const api = createCoreApi({ client: createClient(), storage });
+
+    api.clearJobs();
+    expect(evaluateJob).not.toHaveBeenCalled();
+    expect(api.getState().jobs).toHaveLength(0);
+  });
+});

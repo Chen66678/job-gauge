@@ -239,6 +239,10 @@ export function clearFactLibrary(state: CoreState): CoreState {
   return withUpdatedAt({ ...state, factLibrary: [] });
 }
 
+export function clearJobs(state: CoreState): CoreState {
+  return withUpdatedAt({ ...state, jobs: [] });
+}
+
 export function deleteFact(state: CoreState, factId: string): CoreState {
   const nextFactLibrary = state.factLibrary.filter((fact) => fact.id !== factId);
   if (nextFactLibrary.length === state.factLibrary.length) return state;

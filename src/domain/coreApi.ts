@@ -5,6 +5,7 @@ import {
   applyReconciliationPlan,
   clearCoreState,
   clearFactLibrary as clearCoreFactLibrary,
+  clearJobs as clearCoreJobs,
   computeConfirmedFactsFingerprint,
   deleteFact as deleteCoreFactById,
   deleteFactGroup as deleteCoreFactGroup,
@@ -122,6 +123,7 @@ export interface CoreApi {
   preScreenJob(jobId: string, keywords: string[]): KeywordPreScreenResult | null;
   diagnoseBatch(client: OpenAiCompatibleLlmClient): Promise<BatchDiagnosis>;
   clearFactLibrary(): void;
+  clearJobs(): void;
   deleteFact(factId: string): Promise<void>;
   /** 删父级：分组连同其下全部子事实一并删除（首席裁定）。 */
   deleteFactGroup(groupId: string): Promise<void>;
@@ -755,6 +757,10 @@ export function createCoreApi(deps: {
     clearFactLibrary() {
       persist(clearCoreFactLibrary(state));
       markJobsWithStaleFacts();
+    },
+
+    clearJobs() {
+      persist(clearCoreJobs(state));
     },
 
     async deleteFact(factId) {
