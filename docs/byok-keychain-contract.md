@@ -15,7 +15,7 @@
 - `electron/preload.cjs:7`—`electron/preload.cjs:31`：`coreApi` 仅通过 `contextBridge` 暴露；新增通道必须在这里桥接。
 - `src/OnboardingPage.tsx:76`—`src/OnboardingPage.tsx:80`：现有 `verifyKey()` 是 `setTimeout` 与 `key === 'invalid'` 的前端假验证，必须由本契约定义的真实验证替代。
 - `src/domain/llmClient.ts:20`—`src/domain/llmClient.ts:27`、`src/domain/llmClient.ts:61`、`src/domain/llmClient.ts:86`、`src/domain/llmClient.ts:154`：已有 `LlmClientConfig`、`OpenAiCompatibleLlmClient`、`completeText` 与 `createLlmClient` 可复用。
-- `src/domain/llmClient.ts:230`—`src/domain/llmClient.ts:237`：HTTP 401/403 已映射为 `auth_failed`；真实验证必须复用现有 `completeText`，不得另造 HTTP 探测器。
+- `src/domain/llmClient.ts:254`—`src/domain/llmClient.ts:270`：HTTP 401 映射为 `auth_failed`；403 映射为 `permission_denied`（权限拒绝）或 `quota_exceeded`（额度耗尽）；真实验证必须复用现有 `completeText`，不得另造 HTTP 探测器。
 - `electron/main.cjs:57`：核心状态文件为 `path.join(app.getPath('userData'), 'job-radar', 'core-state.json')`；其校验仅接受 `CoreState`，任何密文或 BYOK 元数据均不得写入其中。
 
 ## 1. IPC 通道形状
@@ -170,7 +170,7 @@ export interface ByokKeyEncryptedRecordV1 {
 
 ## 7. 真验证流程
 
-**现状依据**：`src/OnboardingPage.tsx:76`—`src/OnboardingPage.tsx:80` 目前是假验证；`src/domain/llmClient.ts:86` 定义已有 `completeText`；`src/domain/llmClient.ts:230`—`src/domain/llmClient.ts:237` 已提供 HTTP 错误分类，401/403 为 `auth_failed`。
+**现状依据**：`src/OnboardingPage.tsx:76`—`src/OnboardingPage.tsx:80` 目前是假验证；`src/domain/llmClient.ts:86` 定义已有 `completeText`；`src/domain/llmClient.ts:254`—`src/domain/llmClient.ts:270` 已提供 HTTP 错误分类，401 为 `auth_failed`，403 为 `permission_denied` 或 `quota_exceeded`。
 
 ### 契约规定
 

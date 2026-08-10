@@ -10,6 +10,8 @@ export type ByokKeySource = "keychain" | "environment" | "none";
 
 export type ByokErrorCode =
   | "auth_failed"
+  | "permission_denied"
+  | "quota_exceeded"
   | "network_failure"
   | "timeout"
   | "rate_limited"
@@ -54,7 +56,9 @@ export interface ByokKeyEncryptedRecordV1 {
 
 // 契约 §7.4 固定白名单文案——除此表之外的任何文本都不得作为失败结果的 message。
 const BYOK_ERROR_MESSAGES: Record<ByokErrorCode, string> = {
-  auth_failed: "API Key 无效或无权访问模型，请检查后重试。",
+  auth_failed: "API Key 无效，请检查后重试。",
+  permission_denied: "API Key 无权访问该模型，请确认账户权限后重试。",
+  quota_exceeded: "该模型配额已耗尽，请检查账户余额或等待配额重置。",
   network_failure: "无法连接模型服务，请检查网络后重试。",
   timeout: "验证请求超时，请稍后重试。",
   rate_limited: "模型服务当前限流，请稍后重试。",
@@ -178,6 +182,8 @@ function mapProbeErrorToByokCode(error: unknown): ByokErrorCode {
   if (error instanceof LlmClientError) {
     switch (error.code) {
       case "auth_failed":
+      case "permission_denied":
+      case "quota_exceeded":
       case "network_failure":
       case "timeout":
       case "rate_limited":

@@ -82,7 +82,7 @@ describe("byokKeyStore · §8 脱敏红线 · 返回值不含明文/密文/底�
     expect(serialized).not.toMatch(/stack|cause/i);
     if (!result.ok) {
       expect(result.code).toBe("auth_failed");
-      expect(result.message).toBe("API Key 无效或无权访问模型，请检查后重试。");
+      expect(result.message).toBe("API Key 无效，请检查后重试。");
     }
   });
 
