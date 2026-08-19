@@ -67,7 +67,7 @@ export interface JobPosting {
   title: string;
   company: string;
   city: string;
-  salaryK: [number, number];
+  salaryK: [number, number] | null;
   companyTags: string[];
   jdText: string;
   requirements: JobRequirement[];

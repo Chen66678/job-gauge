@@ -218,6 +218,13 @@ export default function ProfilePage() {
     })
   }
 
+  const resolveConflict = (conflictId: string, winnerFactId: string) => {
+    void run(async () => {
+      unwrap(await api.resolveFactConflict(conflictId, winnerFactId))
+      await refreshState()
+    })
+  }
+
   const facts = state?.factLibrary ?? []
   const factConflicts = state?.factConflicts ?? []
   const factsById = new Map(facts.map(fact => [fact.id, fact] as const))
@@ -266,12 +273,18 @@ export default function ProfilePage() {
     <div className="drop-zone"><div className="dz-icon"><UploadIcon /></div><div className="dz-title">上传 PDF、文本简历或粘贴简历内容</div><div className="dz-sub">支持 PDF、TXT、Markdown 格式</div><div className="dz-actions"><button className="btn" onClick={() => fileInputRef.current?.click()}><UploadIcon />选择文件</button><button className="btn btn-primary" onClick={parseTypedResume} disabled={parsing}>解析简历</button></div>{selectedFileName && <p className="resume-title"><span className="ok-dot"><CheckIcon /></span>已选择文件：{selectedFileName}</p>}<textarea value={resumeText} onChange={event => { setResumeText(event.target.value); setResumeInput(null); setSelectedFileName(null) }} placeholder="粘贴简历文本" aria-label="粘贴简历文本" rows={4} /><input ref={fileInputRef} className="profile-file-input" type="file" accept=".txt,.md,.pdf" onChange={event => void fileSelected(event.target.files?.[0])} /></div>
     {error && <p role="alert" className="profile-error">{error}</p>}
     <div className="section-head"><span className="dot d-indigo" /><span className="section-title">事实库</span></div>
-    {factConflicts.length > 0 && <div className="conflict-section">{factConflicts.map(conflict => <div className="conflict-card" key={conflict.id}>
-      <div className="conflict-title"><WarningIcon />检测到同一事实的多个版本存在差异，需要你确认</div>
-      <div className="conflict-rationale">{conflict.rationale}</div>
-      <div className="conflict-versions">{conflict.factIds.map(factId => factsById.get(factId)).filter((fact): fact is ProfileFact => !!fact).map(fact => <div className="conflict-version" key={fact.id}>{fact.value}</div>)}</div>
-      <div className="conflict-actions"><button className="text-button" onClick={() => dismissConflict(conflict.id)}>已手动处理，移除提示</button></div>
-    </div>)}</div>}
+    {factConflicts.length > 0 && <div className="conflict-section">{factConflicts.map(conflict => {
+      const conflictFacts = conflict.factIds.map(factId => factsById.get(factId)).filter((fact): fact is ProfileFact => !!fact)
+      const conflictLabel = [...new Set(conflictFacts.map(fact => fact.label))].join('、') || '同一事实'
+      return <div className="conflict-card" key={conflict.id}>
+        <div className="conflict-title"><WarningIcon />检测到「{conflictLabel}」存在 {conflict.factIds.length} 个版本，请选择正确版本</div>
+        <div className="conflict-versions">{conflictFacts.map(fact => <div className="conflict-version" key={fact.id}>
+          <div className="conflict-version-copy"><span className={`src-badge src-${fact.sourceType}`}>{sourceLabel(fact.sourceType)}</span><p>{fact.value}</p></div>
+          <button className="text-button" onClick={() => resolveConflict(conflict.id, fact.id)}>采用此版本</button>
+        </div>)}</div>
+        <div className="conflict-actions"><button className="text-button" onClick={() => dismissConflict(conflict.id)}>暂时忽略</button></div>
+      </div>
+    })}</div>}
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}
     {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{category}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
     {facts.length === 0 && !parsing && !parseError && <div className="empty-state facts-empty"><div className="empty-title">还没有可确认的事实</div><div className="empty-sub">上传并解析简历后，事实会按类别展示在这里。</div></div>}

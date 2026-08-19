@@ -7,6 +7,7 @@ const { createCoreApi } = require("../src/domain/coreApi.ts");
 const { buildResumeImageHtml } = require("../src/domain/resumeImage.ts");
 const { createResumeImageRenderer } = require("./resumeImageRenderer.cjs");
 const { createLlmClient } = require("../src/domain/llmClient.ts");
+const { parseSalaryText } = require("../src/domain/jobSalary.ts");
 const { CORE_STATE_STORAGE_KEY } = require("../src/domain/coreState.ts");
 const {
   saveAndVerifyByokKey: saveAndVerifyByokKeyImpl,
@@ -246,6 +247,7 @@ function registerCoreApiHandlers(core) {
   invoke("deleteFact", (factId) => core.api.deleteFact(factId));
   invoke("getReconciliationPreview", () => core.api.getReconciliationPreview());
   invoke("dismissFactConflict", (conflictId) => core.api.dismissFactConflict(conflictId));
+  invoke("resolveFactConflict", (conflictId, winnerFactId) => core.api.resolveFactConflict(conflictId, winnerFactId));
 
   registerByokHandlers(core);
 }
@@ -361,8 +363,8 @@ async function startJobApi(core, localApiToken, candidatePorts = JOB_API_PORTS) 
           jobBase: {
             title: input.title,
             company: input.company,
-            city: "",
-            salaryK: [0, 0],
+            city: typeof input.city === "string" ? input.city : "",
+            salaryK: parseSalaryText(typeof input.salaryText === "string" ? input.salaryText : null),
             companyTags: [],
             workAddress: typeof input.workAddress === "string" ? input.workAddress : null,
             sourceUrl: typeof input.sourceUrl === "string" ? input.sourceUrl : null

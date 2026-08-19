@@ -10,6 +10,7 @@ import {
   deleteFact as deleteCoreFactById,
   deleteFactGroup as deleteCoreFactGroup,
   dismissFactConflict as dismissCoreFactConflict,
+  resolveFactConflict as resolveCoreFactConflict,
   getConfirmedFacts,
   getJobRecord,
   loadCoreState,
@@ -103,7 +104,7 @@ export interface CoreApi {
       title: string;
       company: string;
       city: string;
-      salaryK: [number, number];
+      salaryK: [number, number] | null;
       companyTags: string[];
       workAddress?: string | null;
       sourceUrl?: string | null;
@@ -130,6 +131,8 @@ export interface CoreApi {
   deleteFactGroup(groupId: string): Promise<void>;
   /** 撤销一条已登记的调和冲突（如用户已手动处理过）。三种归档语义仍未定，这里不做任何裁决。 */
   dismissFactConflict(conflictId: string): void;
+  /** 用户为冲突选定正确版本：保留 winner，删除同组其它版本并撤销相关登记。 */
+  resolveFactConflict(conflictId: string, winnerFactId: string): Promise<void>;
   clear(): void;
 }
 
@@ -797,6 +800,11 @@ export function createCoreApi(deps: {
 
     dismissFactConflict(conflictId) {
       persist(dismissCoreFactConflict(state, conflictId));
+    },
+
+    async resolveFactConflict(conflictId, winnerFactId) {
+      persist(resolveCoreFactConflict(state, conflictId, winnerFactId));
+      await automaticallyReevaluateAfterFactChange();
     },
 
     clear() {

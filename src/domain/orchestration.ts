@@ -75,7 +75,7 @@ export function assembleJobPosting(input: {
     title: string;
     company: string;
     city: string;
-    salaryK: [number, number];
+    salaryK: [number, number] | null;
     companyTags: string[];
     jdText: string;
     workAddress?: string | null;
@@ -170,7 +170,7 @@ export async function runFullChainForDemo(input: {
     title: string;
     company: string;
     city: string;
-    salaryK: [number, number];
+    salaryK: [number, number] | null;
     companyTags: string[];
   };
   acceptText: string;
@@ -279,7 +279,7 @@ function buildJobId(base: {
   title: string;
   company: string;
   city: string;
-  salaryK: [number, number];
+  salaryK: [number, number] | null;
   companyTags: string[];
   jdText: string;
 }): string {

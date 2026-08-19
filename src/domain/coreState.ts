@@ -392,6 +392,38 @@ export function dismissFactConflict(state: CoreState, conflictId: string): CoreS
   return withUpdatedAt({ ...state, factConflicts: nextFactConflicts });
 }
 
+/**
+ * 用户为一条冲突选定正确版本：保留 winner，删除同组其它版本，并移除这条冲突登记。
+ * 被删除事实涉及的其它冲突登记一并撤销（不再可追溯）。保留版本视为用户已确认。
+ */
+export function resolveFactConflict(state: CoreState, conflictId: string, winnerFactId: string): CoreState {
+  const conflict = state.factConflicts.find((entry) => entry.id === conflictId);
+  if (!conflict) return state;
+  if (!conflict.factIds.includes(winnerFactId)) return state;
+
+  const removedIds = new Set(conflict.factIds.filter((factId) => factId !== winnerFactId));
+  const nextFactLibrary = state.factLibrary
+    .filter((fact) => !removedIds.has(fact.id))
+    .map((fact) => (fact.id === winnerFactId ? { ...fact, status: "confirmed" as const } : fact));
+
+  const liveGroupIds = new Set(
+    nextFactLibrary
+      .map((fact) => fact.groupId)
+      .filter((groupId): groupId is string => groupId !== null)
+  );
+  const nextFactGroups = state.factGroups.filter((group) => liveGroupIds.has(group.id));
+  const nextFactConflicts = state.factConflicts.filter(
+    (entry) => entry.id !== conflictId && entry.factIds.every((factId) => !removedIds.has(factId))
+  );
+
+  return withUpdatedAt({
+    ...state,
+    factLibrary: nextFactLibrary,
+    factGroups: nextFactGroups,
+    factConflicts: nextFactConflicts
+  });
+}
+
 export function upsertFactGroups(state: CoreState, groups: ProfileFactGroup[]): CoreState {
   const existingById = new Map(state.factGroups.map((group) => [group.id, group] as const));
   const nextFactGroups = [...state.factGroups];
@@ -711,10 +743,11 @@ function isJobPosting(value: unknown): value is JobPosting {
     typeof value.title === "string" &&
     typeof value.company === "string" &&
     typeof value.city === "string" &&
-    Array.isArray(value.salaryK) &&
-    value.salaryK.length === 2 &&
-    typeof value.salaryK[0] === "number" &&
-    typeof value.salaryK[1] === "number" &&
+    (value.salaryK === null ||
+      (Array.isArray(value.salaryK) &&
+        value.salaryK.length === 2 &&
+        typeof value.salaryK[0] === "number" &&
+        typeof value.salaryK[1] === "number")) &&
     isStringArray(value.companyTags) &&
     typeof value.jdText === "string" &&
     Array.isArray(value.requirements) &&

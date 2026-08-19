@@ -23,6 +23,8 @@ export interface JdPayload {
   description: string;
   workAddress: string | null;
   sourceUrl: string | null;
+  salaryText: string | null;
+  city: string | null;
 }
 
 import {
@@ -77,7 +79,7 @@ function extractTitle(): string {
   return text(firstMatch(TITLE_SELECTORS));
 }
 
-// 这是 src/domain/orchestration.ts buildJobId 的镜像实现，因为两个包不共享代码；city 固定传空字符串是因为 electron/main.cjs 的 /api/jobs 处理器目前永远这样传；如果那边的算法或这个假设变了，这里必须同步改。
+// 这是 src/domain/orchestration.ts buildJobId 的镜像实现，因为两个包不共享代码。city/salary 现在由 content script 采集、本地 API 落库；buildJobId 只用 title/company 保持与主应用同源。
 export function computeAppJobId(title: string, company: string): string {
   const slug = `${company}-${title}-`
     .toLowerCase()
@@ -148,6 +150,30 @@ function extractCompany(): string {
     '.job-detail-header .company-name',
   ]);
   return text(legacyEl);
+}
+
+function extractCity(): string | null {
+  const cityEl = firstMatch([
+    '.job-detail-container .job-area',
+    '.job-area',
+    '.job-city',
+    '.name .job-area',
+  ]);
+  return text(cityEl) || null;
+}
+
+function extractSalaryText(): string | null {
+  // BOSS 薪资可能是月薪区间（20-30K）、带薪数（15-25K·13薪）或日薪（300-400元/天）。
+  // 这里只采集原始文本，解析交给本地 API（electron/main.cjs -> jobSalary.ts）。
+  const salaryEl = firstMatch([
+    '.job-detail-container .salary',
+    '.job-detail-container .job-salary',
+    '.job-salary',
+    '.salary',
+    '.job-info .salary',
+    '.name .salary',
+  ]);
+  return text(salaryEl) || null;
 }
 
 function extractWorkAddress(): string | null {
@@ -387,6 +413,8 @@ function extractJd(): JdPayload {
     description: visibleText(descriptionEl),
     workAddress: extractWorkAddress(),
     sourceUrl: extractSourceUrl(),
+    salaryText: extractSalaryText(),
+    city: extractCity(),
   };
 }
 

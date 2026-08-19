@@ -25,9 +25,11 @@
 
 .settings-card {
   margin-top: 24px;
-  padding: 16px;
+  padding: 20px;
+  background: var(--card-bg);
   border: 1px solid var(--border-hairline);
-  border-radius: 8px;
+  border-radius: 12px;
+  box-shadow: var(--shadow-card);
 }
 
 .settings-card-title {
@@ -38,6 +40,15 @@
   margin-bottom: 10px;
 }
 
+.settings-input {
+  border: 1px solid var(--border-control);
+  border-radius: 7px;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.settings-input:focus { outline: 2px solid var(--indigo-bg); border-color: var(--indigo); }
 .settings-number-input {
   width: 72px;
   margin: 0 6px;
@@ -54,7 +65,7 @@
 
 .settings-token-input {
   width: 320px;
-  margin-right: 12px;
+  margin-right: 8px;
 }
 
 .settings-help-text {

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MaterialPreview } from './types'
 import { errorText, unwrap } from './coreApiResult'
-import { exportToPlainText } from './domain/exportResume'
 import './CustomResumePage.css'
 
 function summarizeFact(value: string) {
@@ -149,7 +148,8 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
     setCopyingText(true)
     setError(null)
     try {
-      await navigator.clipboard.writeText(exportToPlainText(material))
+      const body = material.resumeLines.map(line => line.text.trim()).filter(Boolean).join('\n')
+      await navigator.clipboard.writeText(body)
       setCopyStatus('copied')
       window.setTimeout(() => setCopyStatus('idle'), 1500)
     } catch (reason) {
@@ -284,6 +284,16 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
 
           {error && <p className="cr-inline-error" role="alert">{error}</p>}
 
+          {material.greeting && (
+            <section className="cr-cover-note" aria-label="沟通话术">
+              <div className="cr-panel-heading">
+                <div><p className="cr-eyebrow">沟通话术</p><h2>发送招呼语</h2></div>
+              </div>
+              <p className="cr-cover-note-copy">{material.greeting}</p>
+              <p className="cr-cover-note-hint">仅用于打招呼，不会写入简历正文，也不会进入导出的图片 / PDF。</p>
+            </section>
+          )}
+
           <div className="cr-workspace">
             <main className="cr-preview" aria-labelledby="cr-preview-title">
               <div className="cr-panel-heading">
@@ -293,7 +303,6 @@ export default function CustomResumePage({ jobId, onBack }: { jobId: string; onB
                 </button>
               </div>
               <article className="cr-document">
-                {material.greeting && <p className="cr-greeting">{material.greeting}</p>}
                 <div className="cr-resume-lines">
                   {material.resumeLines.map((line, index) => {
                     const lineFacts = line.factIds.map(factId => usedFactsById.get(factId)).filter((fact): fact is NonNullable<typeof fact> => Boolean(fact))

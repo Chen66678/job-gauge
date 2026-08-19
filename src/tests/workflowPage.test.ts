@@ -208,7 +208,7 @@ describe('CustomResumePage', () => {
     expect(draftMaterial).toHaveBeenCalledOnce()
     expect(draftMaterial).toHaveBeenCalledWith('job-new')
     fireEvent.click(screen.getByRole('button', { name: '复制正文文字' }))
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith('您好\n负责 React 项目'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('负责 React 项目'))
     expect(screen.getByRole('button', { name: '已复制' })).not.toBeNull()
   })
 

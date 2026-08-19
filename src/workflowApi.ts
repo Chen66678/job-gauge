@@ -37,7 +37,7 @@ export type WorkflowApi = {
       title: string
       company: string
       city: string
-      salaryK: [number, number]
+      salaryK: [number, number] | null
       companyTags: string[]
       workAddress?: string | null
       sourceUrl?: string | null
@@ -59,6 +59,7 @@ export type WorkflowApi = {
   deleteFact: (factId: string) => Promise<CoreApiResult<void>>
   getReconciliationPreview: () => Promise<CoreApiResult<ReconciliationPreview>>
   dismissFactConflict: (conflictId: string) => Promise<CoreApiResult<void>>
+  resolveFactConflict: (conflictId: string, winnerFactId: string) => Promise<CoreApiResult<void>>
   saveAndVerifyByokKey: (request: SaveAndVerifyByokKeyRequest) => Promise<SaveAndVerifyByokKeyResult>
   getByokKeyStatus: () => Promise<ByokKeyStatus>
   clearByokKey: () => Promise<ClearByokKeyResult>

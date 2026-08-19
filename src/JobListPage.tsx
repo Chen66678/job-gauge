@@ -31,7 +31,7 @@ type MockJob = {
   evaluationError: string | null
   evaluationStale: boolean
   jdText: string
-  salaryK: [number, number]
+  salaryK: [number, number] | null
   collectedAt: string
 }
 
@@ -95,7 +95,7 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
     title: record.job.title,
     company: record.job.company,
     city: record.job.city,
-    salary: `${record.job.salaryK[0]}-${record.job.salaryK[1]}k`,
+    salary: record.job.salaryK && (record.job.salaryK[0] > 0 || record.job.salaryK[1] > 0) ? `${record.job.salaryK[0]}-${record.job.salaryK[1]}k` : '薪资未披露',
     companyTags: record.job.companyTags,
     risks: scoreResult?.risks ?? record.job.risks.map(risk => risk.label),
     gaps: scoreResult?.gaps ?? [],
@@ -415,7 +415,7 @@ function JobRow({
 
         <div className="r1-chevron">{!isPending && <ChevronIcon open={expanded} />}</div>
         <div className="r2-info job-company-line">
-          <span>{job.company} · {job.city}</span>
+          <span>{job.city ? `${job.company} · ${job.city}` : job.company}</span>
           {job.requirements.length > 0 && <span className="kw-chip">关键词命中 {matchedRequirements}/{job.requirements.length}</span>}
         </div>
       </div>
@@ -649,9 +649,10 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
   const pinned = jobs.filter(j => j.pinned)
 
   // Helpers for sort
-  const parseSalaryMax = (s: string) => {
-    const m = s.match(/(\d+)-(\d+)/)
-    return m ? parseInt(m[2]) : 0
+  const parseSalaryMax = (salary: string) => {
+    if (salary === '薪资未披露') return -1
+    const m = salary.match(/(\d+)-(\d+)/)
+    return m ? parseInt(m[2]) : -1
   }
   const originalIdx = (id: string) => jobs.findIndex(j => j.id === id)
   const collectedAtById = new Map(jobs.map(j => [j.id, j.collectedAt] as const))
@@ -700,15 +701,15 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
           )}
           {jobs.length > 0 && (
             clearJobsConfirming
-              ? <div style={{ padding: '8px 12px', border: '1px solid var(--red-border)', borderRadius: 8, background: 'var(--red-bg)', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <p style={{ color: 'var(--red-deep)', margin: 0 }}>将清空全部 {jobs.length} 条岗位（含置顶）。简历事实库和偏好设置不受影响。确定清空吗？</p>
-                  {clearJobsError && <p style={{ color: 'var(--red-deep)', margin: 0, fontSize: 12 }}>{clearJobsError}</p>}
-                  <div>
-                    <button type="button" onClick={() => void clearAllJobs()}>确认清空</button>
-                    <button type="button" style={{ marginLeft: 8 }} onClick={() => { setClearJobsConfirming(false); setClearJobsError(null) }}>取消</button>
+              ? <div className="clear-jobs-confirm">
+                  <p>将清空全部 {jobs.length} 条岗位（含置顶）。简历事实库和偏好设置不受影响。确定清空吗？</p>
+                  {clearJobsError && <p className="clear-jobs-error">{clearJobsError}</p>}
+                  <div className="clear-jobs-confirm-actions">
+                    <button type="button" className="btn-danger-solid" onClick={() => void clearAllJobs()}>确认清空</button>
+                    <button type="button" className="btn-secondary" onClick={() => { setClearJobsConfirming(false); setClearJobsError(null) }}>取消</button>
                   </div>
                 </div>
-              : <button type="button" onClick={() => setClearJobsConfirming(true)}>清空岗位列表</button>
+              : <button type="button" className="btn-danger-ghost" onClick={() => setClearJobsConfirming(true)}>清空岗位列表</button>
           )}
         </div>
       </div>
@@ -716,7 +717,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
       {failedJobs.length > 0 && (
         <div className="failure-banner" role="alert">
           <span>有 {failedJobs.length} 个岗位评估失败，请重试。</span>
-          <button type="button" onClick={() => failedJobs.forEach(job => handleRetry(job.id))}>全部重试</button>
+          <button type="button" className="btn-secondary" onClick={() => failedJobs.forEach(job => handleRetry(job.id))}>全部重试</button>
         </div>
       )}
 

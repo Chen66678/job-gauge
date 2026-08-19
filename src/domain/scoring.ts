@@ -65,17 +65,18 @@ export function scoreJob(
     ...job.risks.map((risk) => `${risk.label}: ${risk.evidence}`),
     ...excludedKeywords.map((keyword) => `触发偏好排除关键词：${keyword}`)
   ];
+  const hasHighRisk = job.risks.some((risk) => risk.severity === "high") || excludedKeywords.length > 0;
   const strategy = classifyStrategy(
     total,
     gaps.length,
-    job.risks.some((risk) => risk.severity === "high") || excludedKeywords.length > 0,
+    hasHighRisk,
     job.reviewFlags.length
   );
 
   return {
     total,
     strategy,
-    strategyLabel: STRATEGY_LABELS[strategy],
+    strategyLabel: strategy === "skip" && hasHighRisk && total >= 45 ? "高风险跳过" : STRATEGY_LABELS[strategy],
     summary: summarizeStrategy(strategy, total),
     breakdown: {
       requirements: requirementResults,
@@ -93,9 +94,11 @@ export function classifyStrategy(
   total: number,
   gapCount: number,
   hasHighRisk: boolean,
-  reviewFlagCount: number
+  reviewFlagCount: number,
+  riskSensitivity?: { high: number }
 ): Strategy {
-  if (hasHighRisk || total < 45) return "skip";
+  // 风险敏感度为“忽略”时（high 权重 0），高风险标签不强制跳过；总分仍按正常阈值分级。
+  if ((hasHighRisk && (riskSensitivity?.high ?? 1) > 0) || total < 45) return "skip";
   if (gapCount > 0 || reviewFlagCount >= 2) return "review";
   if (total >= 78) return "personalize";
   if (total >= 58) return "generic_apply";
@@ -106,7 +109,7 @@ export function scorePreference(job: JobPosting, preferences: PreferenceRuleSet)
   let score = 0;
   if (preferences.targetCities.includes(job.city)) score += 6;
   if (preferences.targetRoles.some((role) => job.title.includes(role.replace("工程师", "")))) score += 5;
-  if (job.salaryK[1] >= preferences.minSalaryK) score += 5;
+  if (job.salaryK !== null && job.salaryK[1] > 0 && job.salaryK[1] >= preferences.minSalaryK) score += 5;
   if (preferences.preferCompanyTags.some((tag) => job.companyTags.includes(tag))) score += 4;
   return score;
 }
@@ -130,7 +133,7 @@ function scoreRiskPenalty(job: JobPosting): number {
 export function summarizeStrategy(strategy: Strategy, total: number): string {
   if (strategy === "personalize") return `总分 ${total}，匹配证据充分，适合逐条定制材料后精投。`;
   if (strategy === "generic_apply") return `总分 ${total}，基本匹配，可作为普通投递候选，但仍需发送前预览。`;
-  if (strategy === "skip") return `总分 ${total} 或风险过高，建议跳过，避免低质量投递。`;
+  if (strategy === "skip") return `总分 ${total}，建议跳过，避免低质量投递。`;
   return `总分 ${total}，存在缺口或复核项，先补充事实或人工判断。`;
 }
 

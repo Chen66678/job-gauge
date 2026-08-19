@@ -140,7 +140,7 @@ describe('ProfilePage resume upload', () => {
 })
 
 describe('ProfilePage fact conflicts', () => {
-  it('renders a conflict card with the rationale and both versions when factConflicts has entries', async () => {
+  it('renders a conflict card with a Chinese title and both versions when factConflicts has entries', async () => {
     const state = {
       factLibrary: [
         { id: 'fact-1', category: '工作经历', label: '后端开发', value: '负责订单服务的开发', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
@@ -155,9 +155,10 @@ describe('ProfilePage fact conflicts', () => {
 
     render(createElement(ProfilePage))
 
-    expect(await screen.findByText('两条描述指向同一职责但细节冲突')).not.toBeNull()
+    expect(await screen.findByText('检测到「后端开发」存在 2 个版本，请选择正确版本')).not.toBeNull()
     expect(screen.getByText('负责订单服务的开发')).not.toBeNull()
     expect(screen.getByText('负责订单服务的重构')).not.toBeNull()
+    expect(screen.queryByText('两条描述指向同一职责但细节冲突')).toBeNull()
   })
 
   it('calls dismissFactConflict and refreshes state when the user clicks the dismiss action', async () => {
@@ -180,11 +181,11 @@ describe('ProfilePage fact conflicts', () => {
 
     render(createElement(ProfilePage))
 
-    fireEvent.click(await screen.findByRole('button', { name: '已手动处理，移除提示' }))
+    fireEvent.click(await screen.findByRole('button', { name: '暂时忽略' }))
 
     await waitFor(() => expect(dismissFactConflict).toHaveBeenCalledWith('conflict-1'))
     expect(getState).toHaveBeenCalledTimes(2)
-    await waitFor(() => expect(screen.queryByText('两条描述指向同一职责但细节冲突')).toBeNull())
+    await waitFor(() => expect(screen.queryByText('检测到「后端开发」存在 2 个版本，请选择正确版本')).toBeNull())
   })
 })
 

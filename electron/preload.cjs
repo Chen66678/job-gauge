@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("coreApi", {
   deleteFact: (factId) => invokeCoreApi("deleteFact", factId),
   getReconciliationPreview: () => invokeCoreApi("getReconciliationPreview"),
   dismissFactConflict: (conflictId) => invokeCoreApi("dismissFactConflict", conflictId),
+  resolveFactConflict: (conflictId, winnerFactId) => invokeCoreApi("resolveFactConflict", conflictId, winnerFactId),
   saveAndVerifyByokKey: (request) => invokeCoreApi("saveAndVerifyByokKey", request),
   getByokKeyStatus: () => invokeCoreApi("getByokKeyStatus"),
   clearByokKey: () => invokeCoreApi("clearByokKey"),

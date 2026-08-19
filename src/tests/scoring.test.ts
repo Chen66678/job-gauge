@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getConfirmedFacts, isFactConfirmed } from "../domain/facts";
-import { classifyStrategy, scoreJob } from "../domain/scoring";
+import { classifyStrategy, scoreJob, scorePreference } from "../domain/scoring";
 import type { JobPosting, PreferenceRuleSet, UserProfile } from "../types";
 
 const sampleProfile: UserProfile = {
@@ -167,5 +167,18 @@ describe("scoring classification", () => {
 
   it("classifies evidence gaps as review when risk is not high", () => {
     expect(classifyStrategy(70, 1, false, 0)).toBe("review");
+  });
+
+  it("does not force skip for a high-risk tag when risk sensitivity is ignore", () => {
+    expect(classifyStrategy(86, 0, true, 0, { high: 0 })).toBe("personalize");
+    expect(classifyStrategy(86, 0, true, 0, { high: 28 })).toBe("skip");
+  });
+
+  it("does not award salary preference when salary is undisclosed", () => {
+    const known = scorePreference(sampleJobs[0], samplePreferences);
+    const unknown = scorePreference({ ...sampleJobs[0], salaryK: null }, samplePreferences);
+    const legacyZero = scorePreference({ ...sampleJobs[0], salaryK: [0, 0] }, samplePreferences);
+    expect(known - unknown).toBe(5);
+    expect(legacyZero).toBe(unknown);
   });
 });

@@ -643,3 +643,16 @@ body {
 
 .app-page-loading { min-height: 320px; display: grid; place-content: center; color: var(--text-muted); font-size: 14px; }
 
+
+/* ─── Shared control styles ─────────────────────────────────── */
+.btn-secondary { border:1px solid var(--gray-border); border-radius:7px; padding:7px 12px; background:var(--card-bg); color:var(--text-primary); cursor:pointer; font-size:13px; }
+.btn-secondary:hover { border-color:var(--indigo); color:var(--indigo); }
+.btn-danger-ghost { border:1px solid var(--red-border); border-radius:7px; padding:7px 12px; background:var(--red-bg); color:var(--red-deep); cursor:pointer; font-size:13px; }
+.btn-danger-ghost:hover { border-color:var(--red); }
+.btn-danger-solid { border:1px solid var(--red-deep); border-radius:7px; padding:7px 12px; background:var(--red-deep); color:#fff; cursor:pointer; font-size:13px; }
+.btn-danger-solid:hover { background:var(--red); border-color:var(--red); }
+
+.clear-jobs-confirm { display:flex; flex-direction:column; gap:8px; padding:8px 12px; border:1px solid var(--red-border); border-radius:8px; background:var(--red-bg); }
+.clear-jobs-confirm p { color:var(--red-deep); margin:0; font-size:13px; }
+.clear-jobs-confirm .clear-jobs-error { color:var(--red-deep); font-size:12px; }
+.clear-jobs-confirm-actions { display:flex; gap:8px; }

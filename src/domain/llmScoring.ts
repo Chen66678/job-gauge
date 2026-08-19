@@ -214,17 +214,19 @@ function buildScoreResult(
     ...job.risks.map((risk) => `${risk.label}: ${risk.evidence}`),
     ...excludedKeywords.map((keyword) => `触发偏好排除关键词：${keyword}`)
   ];
+  const hasHighRisk = job.risks.some((risk) => risk.severity === "high") || excludedKeywords.length > 0;
   const strategy = classifyStrategy(
     total,
     gaps.length,
-    job.risks.some((risk) => risk.severity === "high") || excludedKeywords.length > 0,
-    job.reviewFlags.length
+    hasHighRisk,
+    job.reviewFlags.length,
+    riskSensitivity
   );
 
   return {
     total,
     strategy,
-    strategyLabel: STRATEGY_LABELS[strategy],
+    strategyLabel: strategy === "skip" && hasHighRisk && total >= 45 ? "高风险跳过" : STRATEGY_LABELS[strategy],
     summary: summarizeStrategy(strategy, total),
     breakdown: {
       requirements: requirementResults,

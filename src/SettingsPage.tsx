@@ -21,6 +21,7 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
   const [editingFactId, setEditingFactId] = useState<string | null>(null)
   const [editingValue, setEditingValue] = useState('')
   const [clearConfirming, setClearConfirming] = useState(false)
+  const [showToken, setShowToken] = useState(false)
   const [autoReevaluateCount, setAutoReevaluateCount] = useState(30)
   const [reevaluationPreview, setReevaluationPreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
 
@@ -108,27 +109,28 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
       <h1 className="settings-title">设置</h1>
       <p className="settings-subtitle">管理求职偏好和安装引导。</p>
       <div className="settings-actions">
-        <button onClick={onOpenPreferences}>偏好设置</button>
-        <button onClick={onOpenOnboarding}>重新打开安装引导</button>
-        <button disabled={clearing} onClick={() => void clearKey()}>{clearing ? '清除中…' : '清除本地 API Key'}</button>
+        <button className="btn-secondary" onClick={onOpenPreferences}>偏好设置</button>
+        <button className="btn-secondary" onClick={onOpenOnboarding}>重新打开安装引导</button>
+        <button className="btn-danger-ghost" disabled={clearing} onClick={() => void clearKey()}>{clearing ? '清除中…' : '清除本地 API Key'}</button>
       </div>
       {message && <p className="settings-message">{message}</p>}
 
       <div className="settings-card">
         <h2 className="settings-card-title">自动重评范围</h2>
         <p className="settings-card-copy">简历或偏好保存后，自动重评最近采集的 N 条岗位；置顶岗位始终会重评。范围外岗位会标记为评分已过期。</p>
-        <label>自动重评最近 <input className="settings-number-input" aria-label="自动重评最近 N 条" type="number" min="0" value={autoReevaluateCount} onChange={event => setAutoReevaluateCount(Number(event.target.value))} /> 条</label>
+        <label>自动重评最近 <input className="settings-input settings-number-input" aria-label="自动重评最近 N 条" type="number" min="0" value={autoReevaluateCount} onChange={event => setAutoReevaluateCount(Number(event.target.value))} /> 条</label>
         <div className="settings-button-row">
-          <button onClick={() => void saveAutoReevaluateCount()}>保存</button>
-          <button onClick={() => void previewRecentReevaluation()}>查看调用预估</button>
+          <button className="btn-secondary" onClick={() => void saveAutoReevaluateCount()}>保存</button>
+          <button className="btn-secondary" onClick={() => void previewRecentReevaluation()}>查看调用预估</button>
         </div>
         {reevaluationPreview && <p className="settings-preview">下次自动重评会处理 {reevaluationPreview.jobCount} 条岗位，预计消耗 {reevaluationPreview.modelCallCount} 次模型调用。</p>}
       </div>
 
       <div className="settings-card">
         <p className="settings-token-label">本地插件配对 token</p>
-        <input className="settings-token-input" readOnly value={localApiToken ?? ''} />
-        <button disabled={!localApiToken} onClick={() => void copyToken()}>{copyStatus === 'copied' ? '已复制' : '复制'}</button>
+        <input className="settings-input settings-token-input" readOnly type={showToken ? 'text' : 'password'} value={localApiToken ?? ''} />
+        <button className="btn-secondary" disabled={!localApiToken} onClick={() => setShowToken(value => !value)}>{showToken ? '遮罩' : '显示'}</button>
+        <button className="btn-secondary" disabled={!localApiToken} onClick={() => void copyToken()}>{copyStatus === 'copied' ? '已复制' : '复制'}</button>
         <p className="settings-help-text">粘贴到浏览器插件设置以授权岗位导入</p>
       </div>
 
@@ -138,12 +140,12 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
         {facts.length === 0 && <p>暂无事实，上传简历后自动填充。</p>}
         {facts.length > 0 && <>
           {!clearConfirming
-            ? <button className="settings-clear-trigger" onClick={() => setClearConfirming(true)}>清空事实库</button>
+            ? <button className="btn-danger-ghost settings-clear-trigger" onClick={() => setClearConfirming(true)}>清空事实库</button>
             : <div className="settings-clear-warning">
                 <p>清空后需重新上传简历建库，已确认的事实会全部消失。确定要清空全部 {facts.length} 条事实吗？</p>
                 <div className="settings-button-row">
-                  <button onClick={() => void clearAllFacts()}>确认清空</button>
-                  <button onClick={() => setClearConfirming(false)}>取消</button>
+                  <button className="btn-danger-solid" onClick={() => void clearAllFacts()}>确认清空</button>
+                  <button className="btn-secondary" onClick={() => setClearConfirming(false)}>取消</button>
                 </div>
               </div>}
           <div className="settings-fact-list">
@@ -160,8 +162,8 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
                       ? <div className="settings-edit-panel">
                           <textarea className="settings-edit-textarea" value={editingValue} onChange={event => setEditingValue(event.target.value)} rows={2} aria-label={`修改${fact.label}`} />
                           <div className="settings-button-row">
-                            <button onClick={() => void saveEdit(fact)}>保存</button>
-                            <button onClick={() => { setEditingFactId(null); setEditingValue('') }}>取消</button>
+                            <button className="btn-secondary" onClick={() => void saveEdit(fact)}>保存</button>
+                            <button className="btn-secondary" onClick={() => { setEditingFactId(null); setEditingValue('') }}>取消</button>
                           </div>
                         </div>
                       : <>
@@ -170,8 +172,8 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
                         </>}
                   </div>
                   {editingFactId !== fact.id && <div className="settings-fact-actions">
-                    <button onClick={() => { setEditingFactId(fact.id); setEditingValue(fact.value) }}>编辑</button>
-                    <button onClick={() => void deleteFact(fact.id)}>删除</button>
+                    <button className="btn-secondary" onClick={() => { setEditingFactId(fact.id); setEditingValue(fact.value) }}>编辑</button>
+                    <button className="btn-danger-ghost" onClick={() => void deleteFact(fact.id)}>删除</button>
                   </div>}
                 </div>
               )
