@@ -19,8 +19,12 @@
 
 ## 开发与验证
 
+需要 Node.js 22+。首次安装时，浏览器插件的 `postinstall` 会自动执行 `wxt prepare` 生成类型文件。
+
 ```bash
-npm install
+npm ci
+npm --prefix browser-extension ci
+
 npm run dev
 npm test
 npm run build
@@ -28,6 +32,21 @@ npm run verify:electron
 npm run verify:browser-extension
 npm run verify:release
 ```
+
+## 当前状态
+
+本项目当前为**源码开放阶段**，还不是面向普通用户的成品发布版。主要可用能力已经可运行，但仍缺少打包安装器、自动更新、商店签名和完整 E2E 测试。
+
+## 开源与贡献
+
+本项目使用 MIT License。贡献前请阅读：
+
+- `CONTRIBUTING.md`
+- `CODE_OF_CONDUCT.md`
+- `SECURITY.md`
+- `.github/pull_request_template.md`
+
+请不要提交真实 API Key、本地配对 token、简历原文或岗位采集日志。
 
 ## 安全边界
 

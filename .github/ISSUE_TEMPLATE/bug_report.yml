@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before reporting, please make sure the issue can be reproduced on the current `main` branch.
+        Do not include API keys, local pairing tokens, resume text, collected job logs, or other private data.
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: e.g. 5e70a79
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Browser extension
+        - Electron shell
+        - Job scoring
+        - Resume facts / reconciliation
+        - Preferences / veto
+        - Material drafting / export
+        - Build / tests / CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant command output
+      description: Redact any tokens, keys, resume text, or personal data before pasting.
+      render: shell

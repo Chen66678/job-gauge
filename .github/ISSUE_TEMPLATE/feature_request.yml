@@ -1,0 +1,31 @@
+name: Feature request
+description: Suggest an enhancement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What user or developer problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the desired UX or API and how it stays within the local-first, read-only, BYOK boundaries.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundary checks
+      options:
+        - label: Keeps browser collection read-only
+        - label: Does not upload resumes, jobs, or facts to a remote service
+        - label: Does not weaken BYOK / local API token handling
+        - label: Can be verified by unit or integration tests

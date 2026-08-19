@@ -1,9 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 const failures = [];
 const fail = (message) => failures.push(message);
 
-const requiredDocs = ["README.md", "SECURITY.md", "LICENSE"];
+const requiredDocs = ["README.md", "SECURITY.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"];
 const requiredCodeFiles = [
   "index.html",
   "package.json",
@@ -39,6 +40,14 @@ const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 for (const script of ["dev", "test", "build", "check", "verify:electron", "verify:browser-extension", "verify:release"]) {
   if (!pkg.scripts?.[script]) fail(`missing script ${script}`);
 }
+if (pkg.private !== false) fail("package.json must set private=false for the open-source repository");
+if (pkg.license !== "MIT") fail("package.json must declare MIT license");
+if (!pkg.engines?.node) fail("package.json must declare a supported Node engine");
+
+const extensionPkg = JSON.parse(readFileSync("browser-extension/package.json", "utf8"));
+if (extensionPkg.scripts?.postinstall !== "npm run prepare" || extensionPkg.scripts?.prepare !== "wxt prepare") {
+  fail("browser-extension must generate .wxt types via prepare/postinstall");
+}
 
 const packageJsonText = readFileSync("package.json", "utf8");
 if (packageJsonText.includes("team084-boss-readonly-current-page-export")) {
@@ -54,6 +63,16 @@ if (!packageJsonText.includes("verify-release.mjs")) {
 const indexHtml = readFileSync("index.html", "utf8");
 if (!indexHtml.includes("Content-Security-Policy")) {
   fail("index.html must include a Content-Security-Policy meta tag");
+}
+
+if (existsSync(".git")) {
+  const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);
+  const forbiddenTrackedPrefixes = ["browser-extension/.output/", "browser-extension/.wxt/"];
+  for (const file of tracked) {
+    if (forbiddenTrackedPrefixes.some((prefix) => file.startsWith(prefix))) {
+      fail(`generated artifact must not be tracked: ${file}`);
+    }
+  }
 }
 
 if (failures.length > 0) {
