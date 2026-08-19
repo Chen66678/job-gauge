@@ -32,7 +32,7 @@ const job = {
   evaluationError: null,
   followUps: questions,
   material: null,
-} as WorkflowJob
+} as unknown as WorkflowJob
 
 function buildFact(): ProfileFact {
   return {

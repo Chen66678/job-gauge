@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Run root unit tests
+        run: npm test
+
+      - name: Build renderer and type-check root project
+        run: npm run build
+
+      - name: Install browser extension dependencies
+        run: npm --prefix browser-extension ci
+
+      - name: Run browser extension unit tests
+        run: npm --prefix browser-extension test
+
+      - name: Verify Electron scaffold
+        run: npm run verify:electron
+
+      - name: Verify browser extension readonly boundary
+        run: npm run verify:browser-extension
+
+      - name: Verify release gate
+        run: npm run verify:release

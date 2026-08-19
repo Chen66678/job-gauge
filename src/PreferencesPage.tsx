@@ -37,7 +37,7 @@ const SWITCH_TARGETS: Partial<Record<PreferenceCategory, PreferenceCategory>> = 
 }
 
 export default function PreferencesPage({ onBack }: { onBack?: () => void }) {
-  const api = window.coreApi as unknown as WorkflowApi
+  const api = window.coreApi
   const [state, setState] = useState<CoreState | null>(null)
   const [text, setText] = useState('')
   const [status, setStatus] = useState<'editing' | 'saving' | 'success' | 'failure'>('editing')

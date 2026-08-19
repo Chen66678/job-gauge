@@ -1,7 +1,7 @@
-import type { FactStatus, JobRequirement, MaterialPreview, ProfileFact, ProfileFactGroup } from './types'
+import type { FactStatus, MaterialPreview, ProfileFact } from './types'
 import type { CoreApiResult } from './coreApiResult'
 import type { ByokKeyStatus, ClearByokKeyResult, SaveAndVerifyByokKeyRequest, SaveAndVerifyByokKeyResult } from './domain/byokKeyStore'
-import type { FactConflict } from './domain/coreApi'
+import type { CoreJobRecord, CoreState } from './domain/coreState'
 
 export type FollowUpQuestion = {
   id: string
@@ -11,35 +11,9 @@ export type FollowUpQuestion = {
   rationale: string
 }
 
-export type WorkflowJob = {
-  job: { id: string; title: string; company: string; city: string; requirements?: JobRequirement[]; pinned?: boolean }
-  evaluation: {
-    vetoed: true
-    vetoRuleLabel: string
-  } | {
-    vetoed: false
-    score: {
-      total: number
-      strategyLabel: string
-      strategy: string
-      gaps: string[]
-      risks: string[]
-    }
-  } | null
-  evaluationError: string | null
-  collectedAt?: string
-  evaluationStale?: boolean
-  followUps: FollowUpQuestion[]
-  material: MaterialPreview | null
-}
-
-export type WorkflowState = {
-  factLibrary: ProfileFact[]
-  factGroups?: ProfileFactGroup[]
-  factConflicts?: FactConflict[]
-  jobs: WorkflowJob[]
-  preferences?: { autoReevaluateRecentCount?: number } | null
-}
+/** 渲染层历史别名；现在直接使用 CoreJobRecord/CoreState，避免两套类型分叉。 */
+export type WorkflowJob = CoreJobRecord
+export type WorkflowState = CoreState
 
 export type ReevaluationPreview = { jobCount: number; modelCallCount: number }
 
@@ -56,9 +30,18 @@ export type WorkflowApi = {
   setAutoReevaluateRecentCount: (count: number) => Promise<CoreApiResult<void>>
   getReevaluationPreview: (scope: 'recent' | 'stale') => Promise<CoreApiResult<ReevaluationPreview>>
   reevaluateJobs: (scope: 'recent' | 'stale') => Promise<CoreApiResult<WorkflowJob[]>>
+  setJobPinned: (jobId: string, pinned: boolean) => Promise<CoreApiResult<void>>
   evaluateJobFromJd: (input: {
     jdText: string
-    jobBase: { title: string; company: string; city: string; salaryK: [number, number]; companyTags: string[] }
+    jobBase: {
+      title: string
+      company: string
+      city: string
+      salaryK: [number, number]
+      companyTags: string[]
+      workAddress?: string | null
+      sourceUrl?: string | null
+    }
   }) => Promise<CoreApiResult<WorkflowJob>>
   buildResumeFollowUps: () => Promise<CoreApiResult<FollowUpQuestion[]>>
   applyResumeFollowUpAnswers: (
@@ -69,6 +52,7 @@ export type WorkflowApi = {
   applyFollowUpAnswers: (jobId: string, answers: { questionId: string; answerText: string }[]) => Promise<CoreApiResult<ProfileFact[]>>
   reevaluateJob: (jobId: string) => Promise<CoreApiResult<WorkflowJob | null>>
   draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
+  renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
   addManualFact: (input: { content: string; category: string }) => Promise<CoreApiResult<void>>
   clearFactLibrary: () => Promise<CoreApiResult<void>>
   clearJobs: () => Promise<CoreApiResult<void>>

@@ -24,7 +24,7 @@ export default function FollowUpDrawer(props: FollowUpDrawerProps) {
   const { onClose, onOpenProfile, onSubmitted } = props
   const mode = props.mode ?? 'job'
   const jobId = mode === 'job' ? props.jobId : null
-  const api = window.coreApi as unknown as WorkflowApi
+  const api = window.coreApi
   const [jobTitle, setJobTitle] = useState('岗位')
   const [requirements, setRequirements] = useState<JobRequirement[]>([])
   const [questions, setQuestions] = useState<FollowUpQuestion[]>([])

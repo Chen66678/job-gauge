@@ -15,7 +15,7 @@ const ONBOARDING_COMPLETE_KEY = 'onboardingCompleted'
 const STEPS = ['配 Key', '传简历', '设偏好', '装插件', '导入岗位']
 
 export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished: () => void; onOpenJobs: () => void }) {
-  const api = window.coreApi as unknown as WorkflowApi
+  const api = window.coreApi
   const [step, setStep] = useState<Step>(1)
   const [state, setState] = useState<CoreState | null>(null)
   const [key, setKey] = useState('')

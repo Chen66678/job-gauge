@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Button, Tooltip } from 'antd'
 import { unwrap, errorText, type CoreApiResult } from './coreApiResult'
+import type { CoreState } from './domain/coreState'
 
 type MockJob = {
   id: string
@@ -32,87 +33,6 @@ type MockJob = {
   jdText: string
   salaryK: [number, number]
   collectedAt: string
-}
-
-type CoreState = {
-  jobs: Array<{
-    job: {
-      id: string
-      title: string
-      company: string
-      city: string
-      salaryK: [number, number]
-      companyTags: string[]
-      jdText: string
-      requirements: Array<{ label: string; evidence: string; requiredFactIds: string[] }>
-      risks: Array<{ label: string; evidence: string }>
-      pinned: boolean
-      workAddress: string | null
-      sourceUrl: string | null
-    }
-    evaluation: {
-      vetoed: true
-      vetoRuleLabel: string
-    } | {
-      vetoed: false
-      score: {
-        total: number
-        strategyLabel: string
-        strategy: string
-        gaps: string[]
-        risks: string[]
-        breakdown: { requirements: Array<{ label: string; score: number; maxScore: number; gap: string | null }> }
-      }
-    } | null
-    evaluationError: string | null
-    evaluationStale?: boolean
-    collectedAt?: string
-    followUps: Array<{
-      id: string
-      requirementId: string
-      kind: 'probe' | 'explore'
-      question: string
-      rationale: string
-    }>
-  }>
-  factLibrary: Array<{
-    id: string
-    sourceType: string
-    sourceRef: string
-    status: 'confirmed' | 'unconfirmed' | 'rejected'
-  }>
-}
-
-declare global {
-  interface Window {
-    coreApi: {
-      getState: () => Promise<CoreState>
-      setJobPinned: (jobId: string, pinned: boolean) => Promise<CoreApiResult<void>>
-      onStateChanged: (listener: (state: CoreState) => void) => () => void
-      reevaluateJob: (jobId: string) => Promise<CoreApiResult<unknown>>
-      getReevaluationPreview: (scope: 'recent' | 'stale') => Promise<CoreApiResult<{ jobCount: number; modelCallCount: number }>>
-      reevaluateJobs: (scope: 'recent' | 'stale') => Promise<CoreApiResult<unknown>>
-      evaluateJobFromJd: (input: {
-        jdText: string
-        jobBase: {
-          title: string
-          company: string
-          city: string
-          salaryK: [number, number]
-          companyTags: string[]
-          workAddress?: string | null
-          sourceUrl?: string | null
-        }
-      }) => Promise<CoreApiResult<unknown>>
-      saveAndVerifyByokKey: (request: { apiKey: string }) => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
-      getByokKeyStatus: () => Promise<{ configured: boolean; source: 'keychain' | 'environment' | 'none' }>
-      clearByokKey: () => Promise<CoreApiResult<unknown> | { ok: boolean; [key: string]: unknown }>
-      getLocalApiToken: () => Promise<{ token: string }>
-      renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
-      openExternalUrl: (url: string) => Promise<CoreApiResult<void>>
-      clearJobs: () => Promise<CoreApiResult<void>>
-    }
-  }
 }
 
 type FollowUpBadge = {

@@ -1,17 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MaterialPreview } from './types'
-import type { CoreApiResult } from './coreApiResult'
 import { errorText, unwrap } from './coreApiResult'
 import { exportToPlainText } from './domain/exportResume'
 import './CustomResumePage.css'
-
-type CustomResumeApi = {
-  getState?: () => Promise<{ jobs: Array<{ job: { id: string; sourceUrl: string | null }; material: MaterialPreview | null }> }>
-  draftMaterial: (jobId: string) => Promise<CoreApiResult<MaterialPreview>>
-  renderResumeImage: (jobId: string) => Promise<CoreApiResult<string>>
-  copyResumeImage: (jobId: string) => Promise<CoreApiResult<void>>
-  openExternalUrl: (url: string) => Promise<CoreApiResult<void>>
-}
 
 function summarizeFact(value: string) {
   const normalized = value.replace(/\s+/g, ' ').trim()
@@ -98,7 +89,7 @@ function downloadFile(url: string, filename: string) {
 }
 
 export default function CustomResumePage({ jobId, onBack }: { jobId: string; onBack: () => void }) {
-  const api = window.coreApi as unknown as CustomResumeApi
+  const api = window.coreApi
   const [material, setMaterial] = useState<MaterialPreview | null>(null)
   const [loading, setLoading] = useState(true)
   const [exportingImage, setExportingImage] = useState(false)

@@ -1,0 +1,155 @@
+.settings-page {
+  padding: 40px;
+  color: var(--text-secondary);
+}
+
+.settings-title {
+  margin-bottom: 16px;
+}
+
+.settings-subtitle {
+  margin-bottom: 20px;
+}
+
+.settings-actions,
+.settings-button-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.settings-message {
+  margin-top: 12px;
+}
+
+.settings-card {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+}
+
+.settings-card-title {
+  margin-bottom: 8px;
+}
+
+.settings-card-copy {
+  margin-bottom: 10px;
+}
+
+.settings-number-input {
+  width: 72px;
+  margin: 0 6px;
+}
+
+.settings-preview {
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.settings-token-label {
+  margin-bottom: 8px;
+}
+
+.settings-token-input {
+  width: 320px;
+  margin-right: 12px;
+}
+
+.settings-help-text {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.settings-section {
+  margin-top: 32px;
+}
+
+.settings-section-title {
+  margin-bottom: 12px;
+}
+
+.settings-error {
+  color: var(--red-deep);
+  margin-bottom: 12px;
+}
+
+.settings-clear-trigger {
+  margin-bottom: 12px;
+}
+
+.settings-clear-warning {
+  margin-bottom: 12px;
+  padding: 12px;
+  border: 1px solid var(--red-border);
+  border-radius: 8px;
+  background: var(--red-bg);
+}
+
+.settings-clear-warning p {
+  color: var(--red-deep);
+  margin-bottom: 8px;
+}
+
+.settings-fact-list {
+  margin-top: 4px;
+}
+
+.settings-fact-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+
+.settings-fact-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-fact-group {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.settings-fact-category {
+  margin-right: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.settings-fact-status {
+  margin-left: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.settings-fact-summary {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-fact-value {
+  margin-top: 4px;
+  color: var(--text-secondary);
+}
+
+.settings-fact-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.settings-edit-panel {
+  margin-top: 6px;
+}
+
+.settings-edit-textarea {
+  width: 100%;
+  margin-bottom: 8px;
+}
