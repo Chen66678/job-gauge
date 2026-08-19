@@ -640,3 +640,6 @@ body {
 .btn-danger { border:1px solid var(--red-deep); border-radius:7px; padding:8px 14px; background:var(--red-deep); color:#fff; cursor:pointer; }.btn-danger:hover { background:var(--red); border-color:var(--red); }
 .followup-answer:focus { outline:2px solid var(--indigo-bg); border-color:var(--indigo); }
 .followup-drawer button:focus-visible,.followup-drawer a:focus-visible { outline:2px solid var(--indigo); outline-offset:2px; }
+
+.app-page-loading { min-height: 320px; display: grid; place-content: center; color: var(--text-muted); font-size: 14px; }
+

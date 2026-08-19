@@ -156,6 +156,61 @@ describe("scoreJobWithLlm", () => {
     expect(result.strategy).toBe("review");
   });
 
+
+  it("applies deterministic soft preferences and excluded keyword penalty in the llm scoring path", async () => {
+    const profile = buildProfile([
+      buildFact({ id: "fact-react", label: "React", value: "负责 React 组件开发" })
+    ]);
+    const job = buildJob({
+      title: "前端工程师",
+      city: "上海",
+      salaryK: [20, 30],
+      companyTags: ["SaaS"],
+      jdText: "负责 React 开发。不接受外包。",
+      requirements: [
+        buildRequirement({
+          id: "req-react",
+          kind: "skill",
+          label: "React 组件开发",
+          evidence: "JD 明确要求 React 组件开发。",
+          weight: 1
+        })
+      ]
+    });
+    const client = createMockClient(
+      JSON.stringify({
+        matches: [
+          {
+            requirementId: "req-react",
+            matchLevel: "direct",
+            factIds: ["fact-react"],
+            reason: "事实明确提到 React 组件开发。"
+          }
+        ]
+      })
+    );
+
+    const result = await scoreJobWithLlm({
+      profile,
+      job,
+      client,
+      preferences: {
+        targetRoles: ["前端"],
+        targetCities: ["上海"],
+        minSalaryK: 25,
+        excludedKeywords: ["外包"],
+        preferCompanyTags: ["SaaS"],
+        confidence: 1
+      }
+    });
+
+    // 城市 6 + 方向 5 + 薪资 5 + 公司标签 4 = 20；命中排除词扣 35。
+    expect(result.breakdown.preference).toBe(20);
+    expect(result.breakdown.riskPenalty).toBe(35);
+    expect(result.total).toBe(85);
+    expect(result.risks).toContain("触发偏好排除关键词：外包");
+  });
+
   it("enforces integrity locks by filtering nonexistent and unconfirmed fact ids and downgrading unsupported matches", async () => {
     const profile = buildProfile([
       buildFact({ id: "fact-confirmed", label: "React", value: "负责 React 开发", status: "confirmed" }),

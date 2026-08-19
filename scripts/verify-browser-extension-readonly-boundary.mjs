@@ -1,154 +1,114 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const EXTENSION_DIR = path.resolve("browser-extension/team084-boss-readonly-current-page-export");
-const REQUIRED_FILES = ["manifest.json", "popup.html", "popup.js", "popup.css", "README.md"];
-const ALLOWED_PERMISSIONS = new Set(["activeTab", "scripting"]);
-
 const failures = [];
+const fail = (message) => failures.push(message);
 
-function fail(message) {
-  failures.push(message);
-}
-
-function readText(relativePath) {
-  const filePath = path.join(EXTENSION_DIR, relativePath);
+const root = path.resolve("browser-extension");
+const requiredFiles = [
+  "wxt.config.ts",
+  "entrypoints/background.ts",
+  "entrypoints/content.ts",
+  "entrypoints/options/main.ts",
+  "entrypoints/popup/main.ts",
+  "entrypoints/sidepanel/main.ts",
+  "entrypoints/shared/localApiToken.ts"
+];
+const read = (relativePath) => {
+  const filePath = path.join(root, relativePath);
   if (!fs.existsSync(filePath)) {
     fail(`missing ${relativePath}`);
     return "";
   }
   return fs.readFileSync(filePath, "utf8");
-}
+};
 
-for (const file of REQUIRED_FILES) {
-  if (!fs.existsSync(path.join(EXTENSION_DIR, file))) fail(`missing ${file}`);
-}
+for (const file of requiredFiles) read(file);
 
-const manifestText = readText("manifest.json");
-let manifest = null;
-try {
-  manifest = JSON.parse(manifestText);
-} catch (error) {
-  fail(`manifest.json is not valid JSON: ${error.message}`);
-}
+const wxtConfig = read("wxt.config.ts");
+const backgroundSource = read("entrypoints/background.ts");
+const contentSource = read("entrypoints/content.ts");
+const optionsSource = read("entrypoints/options/main.ts");
+const popupSource = read("entrypoints/popup/main.ts");
+const sidepanelSource = read("entrypoints/sidepanel/main.ts");
 
-if (manifest) {
-  if (manifest.manifest_version !== 3) fail("manifest_version must be 3");
-  if (manifest.action?.default_popup !== "popup.html") fail("manifest action.default_popup must be popup.html");
-
-  const permissions = Array.isArray(manifest.permissions) ? manifest.permissions : [];
-  for (const permission of permissions) {
-    if (!ALLOWED_PERMISSIONS.has(permission)) fail(`permission not allowed: ${permission}`);
-  }
-  for (const permission of ALLOWED_PERMISSIONS) {
+const allowedPermissions = new Set(["activeTab", "tabs", "storage", "clipboardWrite"]);
+const permissionMatch = wxtConfig.match(/permissions:\s*\[([^\]]*)\]/s);
+if (!permissionMatch) {
+  fail("wxt.config.ts must declare permissions");
+} else {
+  const permissions = [...permissionMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  const disallowed = permissions.filter((permission) => !allowedPermissions.has(permission));
+  if (disallowed.length > 0) fail(`permission not allowed: ${disallowed.join(", ")}`);
+  for (const permission of allowedPermissions) {
     if (!permissions.includes(permission)) fail(`required permission missing: ${permission}`);
   }
+}
 
-  if (Array.isArray(manifest.host_permissions) && manifest.host_permissions.length > 0) {
-    fail(`host_permissions must be empty, got ${manifest.host_permissions.join(", ")}`);
+const hostPermissionsMatch = wxtConfig.match(/host_permissions:\s*\[([^\]]*)\]/s);
+if (!hostPermissionsMatch) {
+  fail("wxt.config.ts must declare host_permissions");
+} else {
+  const hosts = [...hostPermissionsMatch[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+  const allowedHosts = ["https://www.zhipin.com/*", "http://127.0.0.1:*/*"];
+  for (const host of hosts) {
+    if (!allowedHosts.includes(host)) fail(`host permission not allowed: ${host}`);
   }
-  if (!Array.isArray(manifest.host_permissions)) fail("host_permissions must be an empty array");
-
-  const disallowedManifestKeys = [
-    "background",
-    "content_scripts",
-    "externally_connectable",
-    "oauth2",
-    "declarative_net_request",
-    "web_accessible_resources"
-  ];
-  for (const key of disallowedManifestKeys) {
-    if (Object.hasOwn(manifest, key)) fail(`manifest key not allowed for readonly artifact: ${key}`);
+  for (const host of allowedHosts) {
+    if (!hosts.includes(host)) fail(`required host permission missing: ${host}`);
   }
 }
 
-const popupHtml = readText("popup.html");
-const popupJs = readText("popup.js");
-const readme = readText("README.md");
-
-const boundaryText = `${popupHtml}\n${readme}`.toLowerCase();
-for (const requiredCopy of [
-  "active tab",
-  "user click",
-  "no cookies",
-  "no network",
-  "no navigation",
-  "no host permissions"
-]) {
-  if (!boundaryText.includes(requiredCopy)) fail(`missing boundary copy: ${requiredCopy}`);
+// Background 是唯一网络出口，且只能访问 127.0.0.1 的三个候选端口。
+if (!backgroundSource.includes("Sole network egress point for this extension")) {
+  fail("background.ts must document itself as the sole network egress point");
+}
+const fetchCalls = [...backgroundSource.matchAll(/\bfetch\s*\(\s*`([^`]+)`/g)].map((match) => match[1]);
+if (fetchCalls.length === 0) fail("background.ts must call fetch to post job payloads");
+for (const url of fetchCalls) {
+  if (!url.includes("http://127.0.0.1:${port}")) fail(`background fetch must target loopback only, got: ${url}`);
+}
+if (/\bXMLHttpRequest\b|\bWebSocket\s*\(|\bEventSource\s*\(|\bnavigator\.sendBeacon\s*\(/.test(backgroundSource)) {
+  fail("background.ts contains disallowed network primitive");
 }
 
-const executablePatterns = [
-  [/\bfetch\s*\(/, "network primitive fetch()"],
-  [/\bXMLHttpRequest\b/, "network primitive XMLHttpRequest"],
-  [/\bWebSocket\s*\(/, "network primitive WebSocket"],
-  [/\bEventSource\s*\(/, "network primitive EventSource"],
-  [/\bnavigator\.sendBeacon\s*\(/, "network primitive navigator.sendBeacon"],
+// Content script 只读采集：不点击、不提交、不导航，不访问 cookie/webRequest/scripting。
+if (!contentSource.includes("READ-ONLY CONTRACT")) fail("content.ts must document the read-only contract");
+if (!contentSource.includes("never clicks, submits, focuses, navigates")) fail("content.ts read-only contract text is incomplete");
+const forbiddenContentPatterns = [
+  [/\.click\s*\(/, "click automation"],
+  [/\.submit\s*\(/, "form automation"],
+  [/\bwindow\.open\s*\(/, "window.open navigation"],
+  [/\blocation\.(href|assign|replace|reload)\s*=/, "location navigation"],
+  [/\bchrome\.tabs\b/, "chrome.tabs navigation/control"],
   [/\bchrome\.cookies\b/, "chrome.cookies credential access"],
   [/\bchrome\.webRequest\b/, "chrome.webRequest interception"],
+  [/\bchrome\.scripting\b/, "chrome.scripting injection"],
   [/\bchrome\.debugger\b/, "chrome.debugger/CDP access"],
-  [/\bchrome\.declarativeNetRequest\b/, "declarativeNetRequest interception"],
-  [/\bchrome\.identity\b/, "chrome.identity account access"],
-  [/\bchrome\.storage\b/, "chrome.storage persistence"],
-  [/\bchrome\.tabs\.(create|update|remove|reload|goBack|goForward)\s*\(/, "tab navigation/control"],
-  [/\bwindow\.open\s*\(/, "window.open navigation"],
-  [/\blocation\.(href|assign|replace|reload)\b/, "location navigation"],
-  [/\bhistory\.(pushState|replaceState)\s*\(/, "history navigation"],
-  [/\b(submit|dispatchEvent)\s*\(/, "form/event automation"],
-  [/\b(setInterval|setTimeout)\s*\(/, "timer/retry primitive"],
-  [/\bMutationObserver\b/, "DOM observer/injection primitive"],
-  [/\b(eval|Function)\s*\(/, "dynamic code execution"],
-  [/\bisTrusted\b/, "isTrusted spoofing hint"],
-  [/\b(headless|stealth|evasion|anti[-_ ]?detect)\b/i, "anti-detection wording"],
-  [/\b(captcha|safeguard|风控|验证码).{0,40}(bypass|solve|破解|绕过|规避)/i, "safeguard bypass wording"]
+  [/\bXMLHttpRequest\b/, "network primitive XMLHttpRequest"],
+  [/\bfetch\s*\(/, "network primitive fetch"],
+  [/\bWebSocket\s*\(/, "network primitive WebSocket"],
+  [/\bnavigator\.sendBeacon\s*\(/, "network primitive navigator.sendBeacon"],
+  [/document\.(body|documentElement)\.innerHTML\s*=/, "page innerHTML mutation"]
 ];
-
-for (const [pattern, label] of executablePatterns) {
-  if (pattern.test(popupJs)) fail(`popup.js contains disallowed ${label}`);
+for (const [pattern, label] of forbiddenContentPatterns) {
+  if (pattern.test(contentSource)) fail(`content.ts contains disallowed ${label}`);
+}
+if (!contentSource.includes("insertAdjacentElement('afterend', marker)")) {
+  fail("content.ts must only inject its own collected marker");
 }
 
-const injectedMutationPatterns = [
-  /document\.(body|documentElement)\.(innerHTML|outerHTML|textContent)\s*=/,
-  /\.appendChild\s*\(/,
-  /\.removeChild\s*\(/,
-  /\.insertAdjacentHTML\s*\(/,
-  /\.setAttribute\s*\(/,
-  /\.click\s*\(/,
-  /\.submit\s*\(/
-];
-
-const executeScriptFuncMatch = popupJs.match(/func:\s*\(\)\s*=>\s*\(\{[\s\S]*?\}\)/);
-const injectedFunctionText = executeScriptFuncMatch?.[0] ?? "";
-if (!injectedFunctionText) fail("chrome.scripting.executeScript func block not found");
-for (const pattern of injectedMutationPatterns) {
-  if (pattern.test(injectedFunctionText)) fail(`injected page function contains DOM/action mutation pattern: ${pattern}`);
+// 非 background 页面/侧边栏/选项页不得发网络请求。
+for (const [name, source] of [
+  ["content.ts", contentSource],
+  ["options/main.ts", optionsSource],
+  ["popup/main.ts", popupSource],
+  ["sidepanel/main.ts", sidepanelSource]
+]) {
+  if (/\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\s*\(|\bnavigator\.sendBeacon\s*\(/.test(source)) {
+    fail(`${name} contains disallowed network primitive`);
+  }
 }
-
-const allowedChromeApiPatterns = [
-  /chrome\.tabs\.query\s*\(/g,
-  /chrome\.scripting\.executeScript\s*\(/g
-];
-const chromeApiMatches = [...popupJs.matchAll(/\bchrome\.[A-Za-z0-9_.]+\s*\(/g)].map((match) => match[0]);
-for (const call of chromeApiMatches) {
-  if (!allowedChromeApiPatterns.some((pattern) => pattern.test(call))) fail(`chrome API call not allowlisted: ${call}`);
-}
-
-const executableActionTerms = /\b(send|upload|contact|chat|apply|batch|navigate|paginate|refresh|scrollTo|scrollIntoView|search)\b/i;
-const executableActionMatches = popupJs
-  .split("\n")
-  .map((line, index) => ({ line: line.trim(), number: index + 1 }))
-  .filter(({ line }) => executableActionTerms.test(line))
-  .filter(({ line }) => !/redacted|sanitize|detectSensitiveFields|classifyPageShape|search results/i.test(line));
-for (const match of executableActionMatches) {
-  fail(`popup.js executable action wording/capability at line ${match.number}: ${match.line}`);
-}
-
-if (!/noNetworkCalls:\s*true/.test(popupJs)) fail("snapshot boundary must include noNetworkCalls: true");
-if (!/noCredentialAccess:\s*true/.test(popupJs)) fail("snapshot boundary must include noCredentialAccess: true");
-if (!/noDomMutation:\s*true/.test(popupJs)) fail("snapshot boundary must include noDomMutation: true");
-if (!/readOnly:\s*true/.test(popupJs)) fail("snapshot boundary must include readOnly: true");
-if (!/userInitiated:\s*true/.test(popupJs)) fail("snapshot boundary must include userInitiated: true");
-if (!/activeTabOnly:\s*true/.test(popupJs)) fail("snapshot boundary must include activeTabOnly: true");
 
 if (failures.length > 0) {
   console.error("browser extension readonly boundary verification failed:");

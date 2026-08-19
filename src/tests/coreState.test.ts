@@ -3,6 +3,7 @@ import {
   CORE_STATE_STORAGE_KEY,
   applyReconciliationPlan,
   clearCoreState,
+  clearFactLibrary,
   createEmptyCoreState,
   deleteFact,
   deleteFactGroup,
@@ -273,13 +274,34 @@ describe("factGroups (D034 父子分组)", () => {
     expect(next.factLibrary.map((fact) => fact.id)).toEqual(["fact-2", "fact-3"]);
   });
 
-  it("子条全删空的父级仍保留在 factGroups 里，但 getConfirmedFacts 拿不到任何子条——不会被当作事实喂给生成", () => {
+  it("子条全删空后，父级分组一并清理", () => {
     let state = buildGroupedState();
     state = deleteFact(state, "fact-1");
     state = deleteFact(state, "fact-2");
 
-    expect(state.factGroups.map((group) => group.id)).toEqual(["group-1"]);
+    expect(state.factGroups.map((group) => group.id)).toEqual([]);
     expect(getConfirmedFacts(state).some((fact) => fact.groupId === "group-1")).toBe(false);
+  });
+
+  it("clearFactLibrary 同时清空 factGroups 和 factConflicts", () => {
+    let state = buildGroupedState();
+    state = {
+      ...state,
+      factConflicts: [
+        {
+          id: "fact-1|fact-2",
+          factIds: ["fact-1", "fact-2"],
+          rationale: "冲突样例",
+          detectedAt: new Date().toISOString()
+        }
+      ]
+    };
+
+    const next = clearFactLibrary(state);
+
+    expect(next.factLibrary).toEqual([]);
+    expect(next.factGroups).toEqual([]);
+    expect(next.factConflicts).toEqual([]);
   });
 
   it("同一家公司被拆成三个 group 时，applyReconciliationPlan 的 merge/supplement 把三个 group 合成一个（首席撤销 08-06 旧论后的新裁定）", () => {

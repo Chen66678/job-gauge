@@ -241,7 +241,7 @@ describe("coreApi", () => {
     const api = createCoreApi({ client: createClient(), storage });
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api.setFactStatus("fact-1", "confirmed");
+    await api.setFactStatus("fact-1", "confirmed");
 
     expect(api.getState().factLibrary).toEqual([{ ...fact, status: "confirmed" }]);
   });
@@ -257,7 +257,7 @@ describe("coreApi", () => {
     const api = createCoreApi({ client: createClient(), storage });
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api.setFactStatus("fact-1", "rejected");
+    await api.setFactStatus("fact-1", "rejected");
 
     // 同内容重传：不得把用户的排除决定翻回 confirmed。
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
@@ -289,7 +289,7 @@ describe("coreApi", () => {
     const api = createCoreApi({ client: createClient(), storage });
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api.setFactStatus("fact-1", "rejected");
+    await api.setFactStatus("fact-1", "rejected");
 
     // 内容变化：即便原先被排除，新内容也走自动确认（不是同一条事实的延续）。
     await api.ingestResume({ kind: "text", resumeText: "主导 React 架构升级。" });
@@ -467,7 +467,7 @@ describe("coreApi", () => {
     orchestrationMocks.ingestResume.mockResolvedValueOnce([fact]);
 
     await api.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api.setFactStatus("fact-1", "rejected");
+    await api.setFactStatus("fact-1", "rejected");
     await api.evaluateJobFromJd({
       jdText: "要求 React 组件开发。",
       jobBase: {
@@ -479,7 +479,7 @@ describe("coreApi", () => {
       }
     });
 
-    api.setFactStatus("fact-1", "confirmed");
+    await api.setFactStatus("fact-1", "confirmed");
 
     await api.evaluateJobFromJd({
       jdText: "要求 React 组件开发。",
@@ -492,7 +492,10 @@ describe("coreApi", () => {
       }
     });
 
-    expect(orchestrationMocks.evaluateJob).toHaveBeenCalledTimes(2);
+    // 第一次评估：事实被排除，评估侧收到空事实库。
+    // 第二次评估：setFactStatus 自动触发重评，收到刚确认的事实。
+    // 第三次评估：显式重新采集同一岗位，仍收到确认事实。
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalledTimes(3);
     expect(orchestrationMocks.evaluateJob.mock.calls[0]?.[0]).toEqual(
       expect.objectContaining({
         profile: expect.objectContaining({
@@ -502,13 +505,15 @@ describe("coreApi", () => {
         hardVeto: undefined
       })
     );
-    expect(orchestrationMocks.evaluateJob.mock.calls[1]?.[0]).toEqual(
-      expect.objectContaining({
-        profile: expect.objectContaining({
-          facts: [{ ...fact, status: "confirmed" }]
+    for (const callIndex of [1, 2]) {
+      expect(orchestrationMocks.evaluateJob.mock.calls[callIndex]?.[0]).toEqual(
+        expect.objectContaining({
+          profile: expect.objectContaining({
+            facts: [{ ...fact, status: "confirmed" }]
+          })
         })
-      })
-    );
+      );
+    }
   });
 
   it("stores vetoed job evaluations without followUps or material", async () => {
@@ -718,7 +723,7 @@ describe("coreApi", () => {
 
     const api1 = createCoreApi({ client: createClient(), storage });
     await api1.ingestResume({ kind: "text", resumeText: "负责 React 组件开发。" });
-    api1.setFactStatus("fact-1", "confirmed");
+    await api1.setFactStatus("fact-1", "confirmed");
     await api1.setPreferencesFromText({ acceptText: "想去上海", vetoText: "" });
 
     const api2 = createCoreApi({ client: createClient(), storage });
@@ -726,6 +731,30 @@ describe("coreApi", () => {
     expect(api2.getState().factLibrary).toEqual([{ ...fact, status: "confirmed" }]);
     expect(api2.getState().preferences).toEqual({ ...preferences, autoReevaluateRecentCount: 30 });
   });
+
+  it("setPreferenceRuleSet persists structured edits without another llm parse", async () => {
+    const storage = new MemoryStorage();
+    const preferences = buildPreferences();
+    orchestrationMocks.ingestPreferences.mockResolvedValueOnce({
+      preferences: preferences.ruleSet,
+      riskSensitivity: preferences.riskSensitivity,
+      hardVeto: preferences.hardVeto
+    });
+    const api = createCoreApi({ client: createClient(), storage });
+    await api.setPreferencesFromText({ acceptText: "想去上海", vetoText: "" });
+
+    const updated = await api.setPreferenceRuleSet({
+      ...preferences.ruleSet,
+      targetRoles: ["前端工程师"],
+      targetCities: [],
+      excludedKeywords: []
+    });
+
+    expect(updated.targetRoles).toEqual(["前端工程师"]);
+    expect(api.getState().preferences?.ruleSet).toEqual(updated);
+    expect(orchestrationMocks.ingestPreferences).toHaveBeenCalledTimes(1);
+  });
+
 
   it("draftMaterial 走真实生成路径，对已评估未否决的岗位返回非 blocked 材料", async () => {
     const storage = new MemoryStorage();
@@ -1060,7 +1089,6 @@ describe("reevaluateJob", () => {
       jobBase: { title: "前端工程师", company: "样例科技", city: "上海", salaryK: [20, 30], companyTags: [] }
     });
 
-    api.setFactStatus("fact-1", "confirmed");
     const updated = await api.reevaluateJob(record.job.id);
 
     expect(orchestrationMocks.evaluateJob).toHaveBeenCalledTimes(2);
@@ -1267,15 +1295,15 @@ describe("fact fingerprint", () => {
     expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
   });
 
-  it("setFactStatus (single) does not trigger reevaluation", () => {
+  it("setFactStatus (single) triggers reevaluation", async () => {
     const storage = new MemoryStorage();
     const fact = buildFact({ id: "fact-1", label: "React", value: "React 开发", status: "unconfirmed" });
     seedState(storage, [makeJobRecord("job-1")], [fact]);
     const api = createCoreApi({ client: createClient(), storage });
 
-    api.setFactStatus("fact-1", "rejected");
+    await api.setFactStatus("fact-1", "rejected");
 
-    expect(orchestrationMocks.evaluateJob).not.toHaveBeenCalled();
+    expect(orchestrationMocks.evaluateJob).toHaveBeenCalled();
   });
 
   it("evaluateJobFromJd writes evaluatedFactFingerprint on success", async () => {
@@ -1360,8 +1388,11 @@ describe("clearJobs", () => {
 
   it("evaluation, material, and followUps are gone because the whole record is removed (semantic #2)", () => {
     const storage = new MemoryStorage();
+    const seedFact = buildFact({ id: "fact-1", label: "React", value: "会 React" });
     storage.setItem(CORE_STATE_STORAGE_KEY, JSON.stringify({
-      schemaVersion: 1, updatedAt: COLLECTED, factLibrary: [], preferences: null,
+      schemaVersion: 1, updatedAt: COLLECTED,
+      factLibrary: [seedFact],
+      preferences: null,
       jobs: [{
         ...makeJobRecord("job-with-material"),
         evaluation: { vetoed: false, score: buildScoreResult() },
@@ -1371,8 +1402,20 @@ describe("clearJobs", () => {
     }));
     const api = createCoreApi({ client: createClient(), storage });
 
+    const before = api.getState().jobs.find((record) => record.job.id === "job-with-material");
+    expect(before).toBeDefined();
+    expect(before?.material).not.toBeNull();
+    expect(before?.followUps.length).toBeGreaterThan(0);
+    expect(before?.evaluation).not.toBeNull();
+
     api.clearJobs();
+
+    const after = api.getState().jobs.find((record) => record.job.id === "job-with-material");
+    expect(after).toBeUndefined();
     expect(api.getState().jobs).toHaveLength(0);
+    // 记录整体消失，而不仅仅是字段清空——factLibrary 作为对照组必须原样保留
+    expect(api.getState().factLibrary).toHaveLength(1);
+    expect(api.getState().factLibrary[0].id).toBe("fact-1");
   });
 
   it("factLibrary, factGroups, factConflicts, and preferences are completely untouched (semantic #3)", () => {

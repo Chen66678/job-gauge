@@ -321,6 +321,28 @@ describe("draftApplicationMaterial", () => {
     ]);
   });
 
+  it("keeps a factId-traceable line but flags it for review when it has no lexical anchor", async () => {
+    const profile = buildProfile([
+      buildFact({ id: "fact-react", label: "React", value: "用过 React 写过一个页面" })
+    ]);
+    const scoreResult = buildScoreResult([
+      buildRequirementResult({ requirementId: "req-react", matchedFactIds: ["fact-react"] })
+    ]);
+    const client = createMockClient(
+      JSON.stringify({
+        greeting: "您好。",
+        resumeLines: [{ text: "精通 Kubernetes 集群运维与可观测性平台建设。", factIds: ["fact-react"] }]
+      })
+    );
+
+    const result = await draftApplicationMaterial({ profile, job: buildJob(), scoreResult, client });
+
+    expect(result.resumeLines).toHaveLength(1);
+    expect(result.status).toBe("needs_review");
+    expect(result.guardrailNotes.some(note => note.includes("未与引用事实建立字面锚点"))).toBe(true);
+  });
+
+
   it("gracefully blocks on garbage or empty json", async () => {
     const profile = buildProfile([buildFact({ id: "fact-react", label: "React", value: "负责 React 组件开发" })]);
     const scoreResult = buildScoreResult([buildRequirementResult()]);

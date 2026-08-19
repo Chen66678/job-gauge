@@ -70,6 +70,31 @@ describe("parsePreferences", () => {
     expect(result.hardVeto.rules).toEqual([]);
   });
 
+  it("parses targetRoles from soft preferences", async () => {
+    const client = createMockClient(
+      JSON.stringify({
+        soft: {
+          targetRoles: ["前端开发", "全栈"],
+          targetCities: [],
+          minSalaryK: 0,
+          preferCompanyTags: [],
+          excludedKeywords: [],
+          riskSensitivity: "mild"
+        },
+        veto: []
+      })
+    );
+
+    const result = await parsePreferences({
+      acceptText: "想做前端开发或全栈方向",
+      vetoText: "",
+      client
+    });
+
+    expect(result.preferences.targetRoles).toEqual(["前端开发", "全栈"]);
+  });
+
+
   it("maps strong risk sensitivity and defaults to mild when not mentioned", async () => {
     const strongClient = createMockClient(
       JSON.stringify({

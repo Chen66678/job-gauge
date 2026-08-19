@@ -24,6 +24,7 @@ interface PreferenceParsingEnvelope {
 }
 
 interface SoftPreferenceItem {
+  targetRoles: string[];
   targetCities: string[];
   minSalaryK: number;
   preferCompanyTags: string[];
@@ -42,13 +43,14 @@ interface VetoItem {
 const PREFERENCE_PARSING_SYSTEM_PROMPT = [
   "You parse job preference text into structured json.",
   "Only extract preferences and veto rules that are explicitly stated by the user.",
-  "Do not invent missing preferences, keywords, cities, company tags, salary, or veto rules.",
+  "Do not invent missing preferences, target roles, keywords, cities, company tags, salary, or veto rules.",
   "If the user did not mention a field, leave it empty or default.",
-  "Preserve the original language of the user's text in every extracted value, including targetCities, preferCompanyTags, excludedKeywords, and veto label/evidence. Do not translate any value into another language, even if it would read more naturally. If the user wrote in Chinese, all extracted values must remain in Chinese exactly as written.",
-  'Return json with exactly this shape: {"soft":{"targetCities":["..."],"minSalaryK":0,"preferCompanyTags":["..."],"excludedKeywords":["..."],"riskSensitivity":"ignore|mild|strong"},"veto":[{"label":"...","kind":"city|keyword|other","mode":"allowlist|blocklist","matchTerms":["..."],"evidence":"..."}]}',
+  "Preserve the original language of the user's text in every extracted value, including targetRoles, targetCities, preferCompanyTags, excludedKeywords, and veto label/evidence. Do not translate any value into another language, even if it would read more naturally. If the user wrote in Chinese, all extracted values must remain in Chinese exactly as written.",
+  'Return json with exactly this shape: {"soft":{"targetRoles":["..."],"targetCities":["..."],"minSalaryK":0,"preferCompanyTags":["..."],"excludedKeywords":["..."],"riskSensitivity":"ignore|mild|strong"},"veto":[{"label":"...","kind":"city|keyword|other","mode":"allowlist|blocklist","matchTerms":["..."],"evidence":"..."}]}',
   "For city veto rules: use mode=allowlist when the user says they only want to go to specific cities (只去X); use mode=blocklist when the user says they never want to go to specific cities (绝不去X/不去X/不想去X). For keyword/other kind, mode can be omitted.",
   "Risk sensitivity must be a discrete level only: ignore, mild, or strong.",
   "Do not output any custom numeric scoring weights.",
+  "Use targetRoles only when the user explicitly states target roles or directions.",
   "Use cities only when the user explicitly names cities.",
   "Use excludedKeywords only when the user explicitly states things to avoid.",
   "Use preferCompanyTags only when the user explicitly states company-type preferences.",
@@ -84,16 +86,29 @@ export async function parsePreferences(input: {
   const hardVeto = normalizeHardVeto(parsed?.veto ?? []);
 
   return {
-    preferences: {
-      targetRoles: [],
+    preferences: normalizePreferenceRuleSet({
+      targetRoles: soft.targetRoles,
       targetCities: soft.targetCities,
       minSalaryK: soft.minSalaryK,
       excludedKeywords: soft.excludedKeywords,
       preferCompanyTags: soft.preferCompanyTags,
       confidence: 1.0
-    },
+    }),
     riskSensitivity: RISK_SENSITIVITY_BY_LEVEL[soft.riskSensitivity],
     hardVeto
+  };
+}
+
+export function normalizePreferenceRuleSet(input: PreferenceRuleSet): PreferenceRuleSet {
+  return {
+    targetRoles: normalizeStringArray(input.targetRoles),
+    targetCities: normalizeStringArray(input.targetCities),
+    minSalaryK: normalizeMinSalaryK(input.minSalaryK),
+    excludedKeywords: normalizeStringArray(input.excludedKeywords),
+    preferCompanyTags: normalizeStringArray(input.preferCompanyTags),
+    confidence: Number.isFinite(input.confidence)
+      ? Math.min(1, Math.max(0, Number(input.confidence.toFixed(3))))
+      : 1.0
   };
 }
 
@@ -163,6 +178,7 @@ function parseEnvelope(raw: string): PreferenceParsingEnvelope | null {
   return {
     soft: isRecord(value.soft)
       ? {
+          targetRoles: toStringArray(value.soft.targetRoles),
           targetCities: toStringArray(value.soft.targetCities),
           minSalaryK: parseNumberish(value.soft.minSalaryK),
           preferCompanyTags: toStringArray(value.soft.preferCompanyTags),
@@ -187,6 +203,7 @@ function parseEnvelope(raw: string): PreferenceParsingEnvelope | null {
 function normalizeSoftPreferences(soft: SoftPreferenceItem | undefined): SoftPreferenceItem {
   const value = soft ?? defaultSoftPreferenceItem();
   return {
+    targetRoles: normalizeStringArray(value.targetRoles),
     targetCities: normalizeStringArray(value.targetCities),
     minSalaryK: normalizeMinSalaryK(value.minSalaryK),
     preferCompanyTags: normalizeStringArray(value.preferCompanyTags),
@@ -222,6 +239,7 @@ function normalizeHardVeto(items: VetoItem[]): HardVetoRules {
 
 function defaultSoftPreferenceItem(): SoftPreferenceItem {
   return {
+    targetRoles: [],
     targetCities: [],
     minSalaryK: 0,
     preferCompanyTags: [],

@@ -1,7 +1,133 @@
 import { describe, expect, it } from "vitest";
 import { getConfirmedFacts, isFactConfirmed } from "../domain/facts";
 import { classifyStrategy, scoreJob } from "../domain/scoring";
-import { sampleJobs, samplePreferences, sampleProfile } from "../sampleData";
+import type { JobPosting, PreferenceRuleSet, UserProfile } from "../types";
+
+const sampleProfile: UserProfile = {
+  id: "profile-test",
+  displayName: "测试候选人",
+  headline: "前端工程师",
+  targetRoles: [],
+  targetCities: [],
+  resumeText: "",
+  facts: [
+    {
+      id: "fact-react",
+      category: "技能",
+      label: "React",
+      value: "负责 React 组件开发",
+      sourceType: "resume",
+      sourceRef: "test",
+      status: "confirmed",
+      confidence: 0.9,
+      groupId: null,
+      summary: null
+    },
+    {
+      id: "fact-node",
+      category: "技能",
+      label: "Node",
+      value: "做过 Node 服务",
+      sourceType: "resume",
+      sourceRef: "test",
+      status: "unconfirmed",
+      confidence: 0.7,
+      groupId: null,
+      summary: null
+    }
+  ]
+};
+
+const samplePreferences: PreferenceRuleSet = {
+  targetRoles: ["前端"],
+  targetCities: ["上海"],
+  minSalaryK: 20,
+  excludedKeywords: ["外包"],
+  preferCompanyTags: ["SaaS"],
+  confidence: 1
+};
+
+const sampleJobs: JobPosting[] = [
+  {
+    id: "job-high",
+    title: "前端工程师",
+    company: "样例科技",
+    city: "上海",
+    salaryK: [20, 30],
+    companyTags: ["SaaS"],
+    jdText: "负责 React 开发。",
+    requirements: [
+      {
+        id: "req-react",
+        kind: "skill",
+        label: "React 开发",
+        evidence: "JD 要求 React。",
+        requiredFactIds: ["fact-react"],
+        weight: 80
+      }
+    ],
+    risks: [],
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
+  },
+  {
+    id: "job-ordinary",
+    title: "后端工程师",
+    company: "样例科技",
+    city: "北京",
+    salaryK: [10, 15],
+    companyTags: [],
+    jdText: "负责后端服务开发。",
+    requirements: [
+      {
+        id: "req-react-ordinary",
+        kind: "skill",
+        label: "React 开发",
+        evidence: "JD 要求 React。",
+        requiredFactIds: ["fact-react"],
+        weight: 70
+      }
+    ],
+    risks: [],
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
+  },
+  {
+    id: "job-skip",
+    title: "前端工程师",
+    company: "外包公司",
+    city: "上海",
+    salaryK: [20, 30],
+    companyTags: ["外包"],
+    jdText: "负责前端开发，外包岗位。",
+    requirements: [
+      {
+        id: "req-react-skip",
+        kind: "skill",
+        label: "React 开发",
+        evidence: "JD 要求 React。",
+        requiredFactIds: ["fact-react"],
+        weight: 70
+      }
+    ],
+    risks: [
+      {
+        id: "risk-training",
+        label: "疑似培训贷",
+        severity: "high",
+        evidence: "JD 出现疑似培训贷款描述"
+      }
+    ],
+    reviewFlags: [],
+    pinned: false,
+    workAddress: null,
+    sourceUrl: null
+  }
+];
 
 describe("fact validation", () => {
   it("only treats confirmed facts as usable evidence", () => {

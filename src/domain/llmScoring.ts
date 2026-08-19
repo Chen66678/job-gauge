@@ -1,6 +1,7 @@
 import type {
   JobPosting,
   JobRequirement,
+  PreferenceRuleSet,
   ProfileFact,
   RequirementResult,
   RiskSeverity,
@@ -9,7 +10,7 @@ import type {
 } from "../types";
 import type { OpenAiCompatibleLlmClient } from "./llmClient";
 import { getConfirmedFacts } from "./facts";
-import { STRATEGY_LABELS, classifyStrategy, summarizeStrategy } from "./scoring";
+import { findExcludedKeywords, scorePreference, STRATEGY_LABELS, classifyStrategy, summarizeStrategy } from "./scoring";
 import { isRecord, stripMarkdownFence } from "./shared";
 
 export type RiskSensitivity = Record<RiskSeverity, number>;
@@ -60,12 +61,13 @@ export async function scoreJobWithLlm(input: {
   job: JobPosting;
   client: OpenAiCompatibleLlmClient;
   riskSensitivity?: RiskSensitivity;
+  preferences?: PreferenceRuleSet;
 }): Promise<ScoreResult> {
   const confirmedFacts = getConfirmedFacts(input.profile);
   const riskSensitivity = input.riskSensitivity ?? DEFAULT_RISK_SENSITIVITY;
 
   if (confirmedFacts.length === 0 || input.job.requirements.length === 0) {
-    return buildScoreResult(input.job, riskSensitivity, buildDefaultRequirementResults(input.job.requirements));
+    return buildScoreResult(input.job, riskSensitivity, buildDefaultRequirementResults(input.job.requirements), input.preferences);
   }
 
   const raw = await input.client.completeText({
@@ -76,7 +78,7 @@ export async function scoreJobWithLlm(input: {
 
   const parsed = parseMatchEnvelope(raw);
   const requirementResults = buildRequirementResults(input.job.requirements, confirmedFacts, parsed?.matches ?? []);
-  return buildScoreResult(input.job, riskSensitivity, requirementResults);
+  return buildScoreResult(input.job, riskSensitivity, requirementResults, input.preferences);
 }
 
 function buildScoringUserPrompt(confirmedFacts: ProfileFact[], requirements: JobRequirement[]): string {
@@ -195,20 +197,27 @@ function buildDefaultRequirementResults(requirements: JobRequirement[]): Require
 function buildScoreResult(
   job: JobPosting,
   riskSensitivity: RiskSensitivity,
-  requirementResults: RequirementResult[]
+  requirementResults: RequirementResult[],
+  preferences?: PreferenceRuleSet
 ): ScoreResult {
   const totalWeight = job.requirements.reduce((sum, requirement) => sum + requirement.weight, 0);
   const weightedScore = requirementResults.reduce((sum, result) => sum + result.score, 0);
   const matchScore = totalWeight > 0 ? (weightedScore / totalWeight) * 100 : 0;
-  const riskPenalty = job.risks.reduce((sum, risk) => sum + riskSensitivity[risk.severity], 0);
+  const preferenceScore = preferences ? scorePreference(job, preferences) : 0;
+  const excludedKeywords = preferences ? findExcludedKeywords(job, preferences) : [];
+  const preferencePenalty = excludedKeywords.length > 0 ? 35 : 0;
+  const riskPenalty = job.risks.reduce((sum, risk) => sum + riskSensitivity[risk.severity], 0) + preferencePenalty;
   const reviewPenalty = job.reviewFlags.length > 0 ? Math.min(8, job.reviewFlags.length * 4) : 0;
-  const total = clamp(Math.round(matchScore - riskPenalty - reviewPenalty), 0, 100);
+  const total = clamp(Math.round(matchScore + preferenceScore - riskPenalty - reviewPenalty), 0, 100);
   const gaps = requirementResults.filter((item) => item.gap).map((item) => `${item.label}: ${item.gap}`);
-  const risks = job.risks.map((risk) => `${risk.label}: ${risk.evidence}`);
+  const risks = [
+    ...job.risks.map((risk) => `${risk.label}: ${risk.evidence}`),
+    ...excludedKeywords.map((keyword) => `触发偏好排除关键词：${keyword}`)
+  ];
   const strategy = classifyStrategy(
     total,
     gaps.length,
-    job.risks.some((risk) => risk.severity === "high"),
+    job.risks.some((risk) => risk.severity === "high") || excludedKeywords.length > 0,
     job.reviewFlags.length
   );
 
@@ -219,7 +228,7 @@ function buildScoreResult(
     summary: summarizeStrategy(strategy, total),
     breakdown: {
       requirements: requirementResults,
-      preference: 0,
+      preference: preferenceScore,
       riskPenalty,
       reviewPenalty
     },

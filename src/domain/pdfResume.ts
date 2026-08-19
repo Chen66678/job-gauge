@@ -1,9 +1,7 @@
-import { getDocument, GlobalWorkerOptions, type PdfDocumentProxy } from 'pdfjs-dist/build/pdf.mjs'
+import type { PdfDocumentProxy } from 'pdfjs-dist/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url'
 
 const MINIMUM_TEXT_LAYER_CHARACTERS = 40
-
-GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 export class PdfTextLayerMissingError extends Error {
   constructor() {
@@ -41,6 +39,10 @@ export function hasUsablePdfText(text: string): boolean {
 }
 
 export async function extractPdfResume(file: File): Promise<string> {
+  // pdfjs 体积较大，只有用户真正解析 PDF 时才加载主库，避免进入首屏 bundle。
+  const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist/build/pdf.mjs')
+  GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+
   const data = new Uint8Array(await file.arrayBuffer())
   const loadingTask = getDocument({ data })
 

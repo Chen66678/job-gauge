@@ -1,4 +1,4 @@
-import type { FactStatus, MaterialPreview, ProfileFact, ScoreResult, UserProfile } from "../types";
+import type { FactStatus, MaterialPreview, PreferenceRuleSet, ProfileFact, ScoreResult, UserProfile } from "../types";
 import { normalizeAutoReevaluateRecentCount, type BatchDiagnosis, type CoreJobRecord, type CorePreferences, type CoreState, type FactConflict } from "./coreState";
 export type { FactConflict } from "./coreState";
 import {
@@ -41,7 +41,7 @@ import {
 } from "./orchestration";
 import type { LocalStorageLike } from "./storage";
 import { redactSecretValues } from "./workbenchRepository";
-import { findVetoHit } from "./preferenceParsing";
+import { findVetoHit, normalizePreferenceRuleSet } from "./preferenceParsing";
 
 interface BatchDiagnosisEnvelope {
   patternSummary?: unknown;
@@ -79,9 +79,10 @@ export interface CoreApi {
   getState(): CoreState;
   addManualFact(input: { content: string; category: string }): Promise<void>;
   ingestResume(input: { kind: "text"; resumeText: string }): Promise<ProfileFact[]>;
-  setFactStatus(factId: string, status: FactStatus): void;
+  setFactStatus(factId: string, status: FactStatus): Promise<void>;
   setFactStatusBatch(updates: { factId: string; status: FactStatus }[]): Promise<void>;
   setPreferencesFromText(input: { acceptText: string; vetoText: string }): Promise<CorePreferences>;
+  setPreferenceRuleSet(ruleSet: PreferenceRuleSet): Promise<PreferenceRuleSet>;
   setAutoReevaluateRecentCount(count: number): void;
   getReevaluationPreview(scope: ReevaluationScope): ReevaluationPreview;
   /**
@@ -273,7 +274,10 @@ export function createCoreApi(deps: {
 
   async function automaticallyReevaluateRecentJobs(): Promise<void> {
     markJobsOutsideRecentScopeStale();
-    await Promise.all(getRecentReevaluationRecords().map((record) => reevaluateRecord(record.job.id)));
+    // 串行执行，避免偏好/事实保存后同时对 N 个岗位发起模型请求触发限流。
+    for (const record of getRecentReevaluationRecords()) {
+      await reevaluateRecord(record.job.id);
+    }
   }
 
   function markJobsWithStaleFacts(): void {
@@ -306,7 +310,8 @@ export function createCoreApi(deps: {
         job: record.job,
         client: deps.client,
         riskSensitivity: state.preferences?.riskSensitivity,
-        hardVeto: state.preferences?.hardVeto
+        hardVeto: state.preferences?.hardVeto,
+        preferences: state.preferences?.ruleSet
       });
       const fresh = getJobRecord(state, jobId) ?? record;
       persist(upsertJobRecord(state, {
@@ -379,8 +384,9 @@ export function createCoreApi(deps: {
 
     getReconciliationPreview,
 
-    setFactStatus(factId, status) {
+    async setFactStatus(factId, status) {
       persist(setCoreFactStatus(state, factId, status));
+      await automaticallyReevaluateAfterFactChange();
     },
 
     async setFactStatusBatch(updates) {
@@ -403,6 +409,20 @@ export function createCoreApi(deps: {
       persist(setCorePreferences(state, preferences));
       await automaticallyReevaluateRecentJobs();
       return preferences;
+    },
+
+    async setPreferenceRuleSet(ruleSet) {
+      const preferences = state.preferences;
+      if (!preferences) {
+        throw new Error("尚未保存过偏好设置，无法直接修改规则。");
+      }
+      const normalizedRuleSet = normalizePreferenceRuleSet(ruleSet);
+      persist(setCorePreferences(state, {
+        ...preferences,
+        ruleSet: normalizedRuleSet
+      }));
+      await automaticallyReevaluateRecentJobs();
+      return normalizedRuleSet;
     },
 
     setAutoReevaluateRecentCount(count) {
@@ -484,7 +504,8 @@ export function createCoreApi(deps: {
             job,
             client: deps.client,
             riskSensitivity: state.preferences?.riskSensitivity,
-            hardVeto: state.preferences?.hardVeto
+            hardVeto: state.preferences?.hardVeto,
+            preferences: state.preferences?.ruleSet
           });
 
           // await 之后必须基于当前 state 重取记录再合并，否则并发写入（置顶、
@@ -559,6 +580,7 @@ export function createCoreApi(deps: {
       });
       const confirmedFacts = preserveUserDecidedStatus(facts);
       persist(upsertFacts(state, confirmedFacts));
+      await automaticallyReevaluateAfterFactChange();
       return confirmedFacts;
     },
 

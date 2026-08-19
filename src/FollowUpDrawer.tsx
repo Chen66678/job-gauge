@@ -7,6 +7,7 @@ import {
   type FollowUpQuestion,
 } from './followUpActions'
 import type { WorkflowApi } from './workflowApi'
+import { readCachedResumeFollowUps, writeCachedResumeFollowUps } from './resumeFollowUpCache'
 
 type CommonProps = {
   onClose: () => void
@@ -51,7 +52,13 @@ export default function FollowUpDrawer(props: FollowUpDrawerProps) {
       setFollowUpSuccess(false)
       try {
         if (mode === 'resume') {
-          const nextQuestions = unwrap(await api.buildResumeFollowUps())
+          const state = await api.getState()
+          const facts = state.factLibrary ?? []
+          let nextQuestions = readCachedResumeFollowUps(facts)
+          if (!nextQuestions) {
+            nextQuestions = unwrap(await api.buildResumeFollowUps())
+            writeCachedResumeFollowUps(facts, nextQuestions)
+          }
           if (activeRequestRef.current !== requestKey) return
           setJobTitle('简历')
           setRequirements([])

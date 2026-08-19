@@ -12,7 +12,7 @@ function buildState(score: number | null, evaluationError: string | null = null)
     factLibrary: [{
       id: 'fact-follow-up',
       sourceType: 'user_answer',
-      sourceRef: '反问:请补充 React 项目经历',
+      sourceRef: '反问:follow-up-1:请补充 React 项目经历',
       status: 'confirmed' as const,
     }],
     jobs: [{

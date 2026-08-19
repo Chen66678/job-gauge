@@ -227,6 +227,7 @@ function registerCoreApiHandlers(core) {
   invoke("setFactStatus", (factId, status) => core.api.setFactStatus(factId, status));
   invoke("setFactStatusBatch", (updates) => core.api.setFactStatusBatch(updates));
   invoke("setPreferencesFromText", (input) => core.api.setPreferencesFromText(input));
+  invoke("setPreferenceRuleSet", (ruleSet) => core.api.setPreferenceRuleSet(ruleSet));
   invoke("setAutoReevaluateRecentCount", (count) => core.api.setAutoReevaluateRecentCount(count));
   invoke("getReevaluationPreview", (scope) => core.api.getReevaluationPreview(scope));
   invoke("reevaluateJobs", (scope) => core.api.reevaluateJobs(scope));
@@ -238,16 +239,11 @@ function registerCoreApiHandlers(core) {
   invoke("applyFollowUpAnswers", (jobId, answers) => core.api.applyFollowUpAnswers(jobId, answers));
   invoke("reevaluateJob", (jobId) => core.api.reevaluateJob(jobId));
   invoke("draftMaterial", (jobId) => core.api.draftMaterial(jobId));
-  invoke("exportResume", (jobId) => core.api.exportResume(jobId));
   invoke("renderResumeImage", (jobId) => core.api.renderResumeImage(jobId));
-  invoke("preScreenJob", (jobId, keywords) => core.api.preScreenJob(jobId, keywords));
-  invoke("diagnoseBatch", () => core.api.diagnoseBatch(core.getClient()));
-  invoke("clear", () => core.api.clear());
   invoke("addManualFact", (input) => core.api.addManualFact(input));
   invoke("clearFactLibrary", () => core.api.clearFactLibrary());
   invoke("clearJobs", () => core.api.clearJobs());
   invoke("deleteFact", (factId) => core.api.deleteFact(factId));
-  invoke("deleteFactGroup", (groupId) => core.api.deleteFactGroup(groupId));
   invoke("getReconciliationPreview", () => core.api.getReconciliationPreview());
   invoke("dismissFactConflict", (conflictId) => core.api.dismissFactConflict(conflictId));
 

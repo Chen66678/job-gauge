@@ -197,7 +197,10 @@ describe('OnboardingPage job import step', () => {
     await screen.findByRole('heading', { name: '导入第一个岗位', level: 1 }, { timeout: 3000 })
     await waitFor(() => expect(api.onStateChanged).toHaveBeenCalledOnce())
 
-    stateChangedListener?.({ factLibrary: [], jobs: [{}] } as unknown as CoreState)
+    stateChangedListener?.({
+      factLibrary: [],
+      jobs: [{ evaluation: { vetoed: false, score: {} }, evaluationError: null }]
+    } as unknown as CoreState)
 
     await screen.findByRole('heading', { name: '第一个岗位已评估完成！', level: 2 })
   }, 10000)

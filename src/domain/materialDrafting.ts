@@ -67,15 +67,23 @@ export async function draftApplicationMaterial(input: {
   const confirmedFactById = new Map(confirmedFacts.map((fact) => [fact.id, fact] as const));
   let droppedLineCount = 0;
 
-  const keptLines = parsed.resumeLines.flatMap((line) => {
+  const keptLineCandidates = parsed.resumeLines.flatMap((line) => {
     const text = line.text.trim();
     const factIds = unique(line.factIds.filter((factId) => confirmedFactById.has(factId)));
     if (!text || factIds.length === 0) {
       droppedLineCount += 1;
       return [];
     }
-    return [{ text, factIds }];
+    const referencedFacts = factIds
+      .map((factId) => confirmedFactById.get(factId))
+      .filter(isProfileFact);
+    return [{
+      text,
+      factIds,
+      traceable: hasTraceableAnchor(text, referencedFacts)
+    }];
   });
+  const keptLines = keptLineCandidates.map(({ text, factIds }) => ({ text, factIds }));
 
   const usedFacts = unique(keptLines.flatMap((line) => line.factIds))
     .map((factId) => confirmedFactById.get(factId))
@@ -83,9 +91,13 @@ export async function draftApplicationMaterial(input: {
     .map(toFactTrace);
 
   const unsupportedRequirements = input.scoreResult.breakdown.requirements.filter((item) => item.matchedFactIds.length === 0);
+  const anchorReviewNotes = keptLineCandidates.flatMap((line, index) =>
+    line.traceable ? [] : [`第 ${index + 1} 行未与引用事实建立字面锚点，请重点复核。`]
+  );
   const guardrailNotes = [
     ...unsupportedRequirements.map((item) => `${item.label}无确认事实支撑,未纳入材料。`),
     ...(droppedLineCount > 0 ? [`已丢弃 ${droppedLineCount} 行无溯源材料表达。`] : []),
+    ...anchorReviewNotes,
     "打招呼语需用户发送前自查,确认未引入确认事实之外的硬信息。"
   ];
 
@@ -168,6 +180,35 @@ function resolveMaterialStatus(lineCount: number, guardrailCount: number): Mater
 
 function unique(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function hasTraceableAnchor(text: string, facts: ProfileFact[]): boolean {
+  const lineTokens = extractAnchorTokens(text);
+  if (lineTokens.size === 0) return true;
+  const sourceTokens = new Set(facts.flatMap((fact) => [...extractAnchorTokens(fact.value)]));
+  for (const token of lineTokens) {
+    if (sourceTokens.has(token)) return true;
+  }
+  return false;
+}
+
+function extractAnchorTokens(value: string): Set<string> {
+  const normalized = value.toLowerCase();
+  const tokens = new Set<string>();
+  for (const match of normalized.matchAll(/[a-z0-9]{2,}/g)) {
+    tokens.add(match[0]);
+  }
+
+  const compact = Array.from(normalized.replace(/\s+/g, ""));
+  for (let index = 0; index < compact.length - 1; index += 1) {
+    const pair = `${compact[index]}${compact[index + 1]}`;
+    if (isHanPair(pair)) tokens.add(pair);
+  }
+  return tokens;
+}
+
+function isHanPair(value: string): boolean {
+  return Array.from(value).length === 2 && Array.from(value).every((character) => /\p{Script=Han}/u.test(character));
 }
 
 function isProfileFact(fact: ProfileFact | undefined): fact is ProfileFact {

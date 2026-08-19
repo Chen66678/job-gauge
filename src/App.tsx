@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Tooltip } from 'antd'
 import JobListPage from './JobListPage'
-import CustomResumePage from './CustomResumePage'
 import FollowUpDrawer from './FollowUpDrawer'
-import OnboardingPage from './OnboardingPage'
-import PreferencesPage from './PreferencesPage'
-import ProfilePage from './ProfilePage'
-import SettingsPage from './SettingsPage'
+
+const CustomResumePage = lazy(() => import('./CustomResumePage'))
+const OnboardingPage = lazy(() => import('./OnboardingPage'))
+const PreferencesPage = lazy(() => import('./PreferencesPage'))
+const ProfilePage = lazy(() => import('./ProfilePage'))
+const SettingsPage = lazy(() => import('./SettingsPage'))
 
 type Page = 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding' | 'customResume'
 
@@ -91,14 +92,16 @@ export default function App() {
 
       {/* ── Main ── */}
       <main className="app-main">
-        {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} onOpenFollowUp={openFollowUp} onOpenProfile={() => setPage('profile')} />}
-        {page === 'customResume' && selectedJobId && <CustomResumePage jobId={selectedJobId} onBack={() => setPage('jobs')} />}
-        {page === 'profile' && <ProfilePage />}
-        {page === 'preferences' && <PreferencesPage onBack={() => setPage('settings')} />}
-        {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
-        {page === 'settings' && (
-          <SettingsPage onOpenPreferences={() => setPage('preferences')} onOpenOnboarding={() => setPage('onboarding')} />
-        )}
+        <Suspense fallback={<div className="app-page-loading" aria-live="polite">加载中...</div>}>
+          {page === 'jobs' && <JobListPage onStartWorkflow={startWorkflow} onOpenFollowUp={openFollowUp} onOpenProfile={() => setPage('profile')} />}
+          {page === 'customResume' && selectedJobId && <CustomResumePage jobId={selectedJobId} onBack={() => setPage('jobs')} />}
+          {page === 'profile' && <ProfilePage />}
+          {page === 'preferences' && <PreferencesPage onBack={() => setPage('settings')} />}
+          {page === 'onboarding' && <OnboardingPage onFinished={() => setPage('jobs')} onOpenJobs={() => setPage('jobs')} />}
+          {page === 'settings' && (
+            <SettingsPage onOpenPreferences={() => setPage('preferences')} onOpenOnboarding={() => setPage('onboarding')} />
+          )}
+        </Suspense>
       </main>
       <FollowUpDrawer
         jobId={followUpJobId}

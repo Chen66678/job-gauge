@@ -35,6 +35,15 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const refresh = async () => setState(await api.getState() as CoreState)
+  const openProviderKeyPage = async () => {
+    setError(null)
+    try {
+      unwrap(await window.coreApi.openExternalUrl('https://bailian.console.aliyun.com/'))
+    } catch (reason) {
+      setError(errorText(reason))
+    }
+  }
+
   useEffect(() => { void refresh().catch(reason => setError(errorText(reason))) }, [])
   useEffect(() => {
     if (keyStatus !== 'success') return
@@ -47,7 +56,12 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
     setJobStatus('waiting')
     const unsubscribe = api.onStateChanged(nextState => {
       setState(nextState as CoreState)
-      if (nextState.jobs.length > baselineJobCount) setJobStatus('success')
+      // 只新增岗位记录还不够：JD 解析/评分失败也会先落一条基础记录。
+      // 必须出现“新增且已成功评估、未否决”的记录才允许结束引导。
+      const hasNewEvaluatedJob = nextState.jobs.length > baselineJobCount && nextState.jobs.some(record =>
+        record.evaluation !== null && record.evaluation.vetoed === false && !record.evaluationError
+      )
+      if (hasNewEvaluatedJob) setJobStatus('success')
     })
     return unsubscribe
   }, [step])
@@ -127,7 +141,7 @@ export default function OnboardingPage({ onFinished, onOpenJobs }: { onFinished:
         {keyStatus === 'failure' && <div className="error-banner">{keyError ?? '验证失败：Key 无效或已过期，请检查后重新填写'}</div>}
         <input className="wizard-input" type="password" value={key} disabled={keyStatus === 'checking' || keyStatus === 'success'} placeholder="输入模型服务 Key" onChange={event => { setKey(event.target.value); setKeyStatus('empty'); setKeyError(null) }} />
         {keyStatus === 'checking' && <p className="inline-loading"><span className="spinner" />正在验证 Key…</p>}
-        <div className="step-card-footer"><button className="text-button" disabled={keyStatus === 'checking'} onClick={() => window.open('https://bailian.console.aliyun.com/', '_blank')}>去阿里云获取 Key ↗</button><button className="primary-button" disabled={keyStatus === 'checking'} onClick={() => void verifyKey()}>{keyStatus === 'checking' ? '验证中…' : keyStatus === 'failure' ? '重新填写' : '验证并继续'}</button></div>
+        <div className="step-card-footer"><button className="text-button" disabled={keyStatus === 'checking'} onClick={() => void openProviderKeyPage()}>去阿里云获取 Key ↗</button><button className="primary-button" disabled={keyStatus === 'checking'} onClick={() => void verifyKey()}>{keyStatus === 'checking' ? '验证中…' : keyStatus === 'failure' ? '重新填写' : '验证并继续'}</button></div>
       </>}
       {step === 2 && <>
         <h1 className="step-card-title">上传简历</h1><p className="step-card-desc">仅用于提取求职事实，解析结果不会在这里回显简历原文。</p>

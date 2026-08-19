@@ -3,6 +3,7 @@ import type { FactStatus, ProfileFact } from './types'
 import type { WorkflowApi, WorkflowState } from './workflowApi'
 import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
+import { readCachedResumeFollowUps, writeCachedResumeFollowUps } from './resumeFollowUpCache'
 import FollowUpDrawer from './FollowUpDrawer'
 import './ProfilePage.css'
 
@@ -75,8 +76,20 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!state?.factLibrary.some(fact => fact.sourceType === 'resume') || resumeFollowUpsCheckedRef.current) return
     resumeFollowUpsCheckedRef.current = true
+
+    const facts = state.factLibrary
+    const cached = readCachedResumeFollowUps(facts)
+    if (cached) {
+      setResumeFollowUpCount(cached.length)
+      return
+    }
+
     api.buildResumeFollowUps()
-      .then(result => setResumeFollowUpCount(unwrap(result).length))
+      .then(result => {
+        const questions = unwrap(result)
+        writeCachedResumeFollowUps(facts, questions)
+        setResumeFollowUpCount(questions.length)
+      })
       .catch(reason => {
         setError(formatError(reason))
         setResumeFollowUpCount(0)

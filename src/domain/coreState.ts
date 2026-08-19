@@ -236,7 +236,12 @@ export function computeConfirmedFactsFingerprint(state: CoreState): string {
 }
 
 export function clearFactLibrary(state: CoreState): CoreState {
-  return withUpdatedAt({ ...state, factLibrary: [] });
+  return withUpdatedAt({
+    ...state,
+    factLibrary: [],
+    factGroups: [],
+    factConflicts: []
+  });
 }
 
 export function clearJobs(state: CoreState): CoreState {
@@ -246,7 +251,19 @@ export function clearJobs(state: CoreState): CoreState {
 export function deleteFact(state: CoreState, factId: string): CoreState {
   const nextFactLibrary = state.factLibrary.filter((fact) => fact.id !== factId);
   if (nextFactLibrary.length === state.factLibrary.length) return state;
-  return withUpdatedAt({ ...state, factLibrary: nextFactLibrary });
+
+  const liveGroupIds = new Set(
+    nextFactLibrary
+      .map((fact) => fact.groupId)
+      .filter((groupId): groupId is string => groupId !== null)
+  );
+  const nextFactGroups = state.factGroups.filter((group) => liveGroupIds.has(group.id));
+
+  return withUpdatedAt({
+    ...state,
+    factLibrary: nextFactLibrary,
+    factGroups: nextFactGroups
+  });
 }
 
 /**

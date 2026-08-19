@@ -25,6 +25,7 @@ function renderSavedPreferences() {
   const api = {
     getState: vi.fn(async () => preferenceState),
     setPreferencesFromText: vi.fn(async () => preferenceState.preferences),
+    setPreferenceRuleSet: vi.fn(async (ruleSet: unknown) => ruleSet),
   } as unknown as WorkflowApi
   window.coreApi = api as unknown as typeof window.coreApi
   render(createElement(PreferencesPage))
@@ -40,23 +41,29 @@ async function savePreferences() {
 afterEach(cleanup)
 
 describe('PreferencesPage editable chips', () => {
-  it('removes a single chip from the local display', async () => {
-    renderSavedPreferences()
+  it('removes a single chip and persists the rule-set change', async () => {
+    const api = renderSavedPreferences()
     await savePreferences()
 
     fireEvent.click(screen.getByRole('button', { name: '删除：前端工程师' }))
 
     expect(screen.queryByText('前端工程师')).toBeNull()
+    await waitFor(() => expect(api.setPreferenceRuleSet).toHaveBeenCalledWith(
+      expect.objectContaining({ targetRoles: [], targetCities: [], excludedKeywords: ['外包'] })
+    ))
   })
 
-  it('moves a chip to the next category locally', async () => {
-    renderSavedPreferences()
+  it('moves a chip to the next category and persists the rule-set change', async () => {
+    const api = renderSavedPreferences()
     await savePreferences()
 
     fireEvent.click(screen.getByRole('button', { name: '切换类别：前端工程师' }))
 
     await waitFor(() => expect(screen.getByText('🏙 目标城市')).toBeTruthy())
     expect(screen.getByText('前端工程师').closest('.pref-chip')?.className).toContain('city')
+    await waitFor(() => expect(api.setPreferenceRuleSet).toHaveBeenCalledWith(
+      expect.objectContaining({ targetRoles: [], targetCities: ['前端工程师'], excludedKeywords: ['外包'] })
+    ))
   })
 
   it('does not render sections for empty semantic arrays', async () => {
@@ -83,6 +90,7 @@ describe('PreferencesPage editable chips', () => {
         return Promise.resolve(freshState())
       }),
       setPreferencesFromText: vi.fn(async () => freshState().preferences),
+      setPreferenceRuleSet: vi.fn(async (ruleSet: unknown) => ruleSet),
     } as unknown as WorkflowApi
     window.coreApi = api as unknown as typeof window.coreApi
 

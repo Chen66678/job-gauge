@@ -107,6 +107,7 @@ export async function evaluateJob(input: {
   client: OpenAiCompatibleLlmClient;
   riskSensitivity?: RiskSensitivity;
   hardVeto?: HardVetoRules;
+  preferences?: PreferenceRuleSet;
 }): Promise<{ vetoed: true; vetoRule: HardVetoRule } | { vetoed: false; score: ScoreResult }> {
   const vetoRule = input.hardVeto ? findVetoHit(input.job, input.hardVeto) : null;
   if (vetoRule) {
@@ -117,7 +118,8 @@ export async function evaluateJob(input: {
     profile: input.profile,
     job: input.job,
     client: input.client,
-    riskSensitivity: input.riskSensitivity
+    riskSensitivity: input.riskSensitivity,
+    preferences: input.preferences
   });
 
   return { vetoed: false, score };

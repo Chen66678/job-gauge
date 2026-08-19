@@ -102,7 +102,7 @@ export function classifyStrategy(
   return "review";
 }
 
-function scorePreference(job: JobPosting, preferences: PreferenceRuleSet): number {
+export function scorePreference(job: JobPosting, preferences: PreferenceRuleSet): number {
   let score = 0;
   if (preferences.targetCities.includes(job.city)) score += 6;
   if (preferences.targetRoles.some((role) => job.title.includes(role.replace("工程师", "")))) score += 5;
@@ -111,7 +111,7 @@ function scorePreference(job: JobPosting, preferences: PreferenceRuleSet): numbe
   return score;
 }
 
-function findExcludedKeywords(job: JobPosting, preferences: PreferenceRuleSet): string[] {
+export function findExcludedKeywords(job: JobPosting, preferences: PreferenceRuleSet): string[] {
   const haystack = `${job.title} ${job.company} ${job.city} ${job.companyTags.join(" ")} ${job.jdText}`.toLowerCase();
   return preferences.excludedKeywords
     .map((keyword) => keyword.trim())

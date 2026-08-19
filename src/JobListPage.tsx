@@ -8,9 +8,7 @@ type MockJob = {
   company: string
   city: string
   salary: string
-  commute?: string
   companyTags: string[]
-  coreMatch?: { label: string; pct: number }
   risks: string[]
   gaps: string[]
   score: number | null
@@ -27,13 +25,13 @@ type MockJob = {
     question?: string
   }[]
   requirements: string[]
-  industry: string
   workAddress: string | null
   sourceUrl: string | null
   evaluationError: string | null
   evaluationStale: boolean
   jdText: string
   salaryK: [number, number]
+  collectedAt: string
 }
 
 type CoreState = {
@@ -68,6 +66,7 @@ type CoreState = {
     } | null
     evaluationError: string | null
     evaluationStale?: boolean
+    collectedAt?: string
     followUps: Array<{
       id: string
       requirementId: string
@@ -128,9 +127,14 @@ type ReevaluationSnapshot = {
 }
 
 function getFollowUpFacts(record: CoreState['jobs'][number], factLibrary: CoreState['factLibrary']) {
-  const questionPrefixes = record.followUps.map(followUp => `反问:${followUp.question.slice(0, 20)}`)
+  // followUp.ts 写入 sourceRef 的格式是 `反问:${question.id}:${question.question.slice(0, 20)}`。
+  // 这里必须按完整格式精确匹配；旧实现漏掉了 question.id，导致已提交的追问事实永远匹配不到，
+  // 岗位列表会一直显示“待回答 N 问”。
+  const questionSourceRefs = new Set(
+    record.followUps.map(followUp => `反问:${followUp.id}:${followUp.question.slice(0, 20)}`)
+  )
   return factLibrary.filter(fact => (
-    fact.sourceType === 'user_answer' && questionPrefixes.some(prefix => fact.sourceRef.includes(prefix))
+    fact.sourceType === 'user_answer' && questionSourceRefs.has(fact.sourceRef)
   ))
 }
 
@@ -189,13 +193,13 @@ function toDisplayJob(record: CoreState['jobs'][number]): MockJob {
       return { label: requirement.label, pct, gap, measured, tier, question: requirement.evidence }
     }),
     requirements: requirements.map(requirement => requirement.label),
-    industry: '',
     workAddress: record.job.workAddress,
     sourceUrl: record.job.sourceUrl,
     evaluationError: record.evaluationError,
     evaluationStale: record.evaluationStale ?? false,
     jdText: record.job.jdText,
-    salaryK: record.job.salaryK
+    salaryK: record.job.salaryK,
+    collectedAt: record.collectedAt ?? ''
   }
 }
 
@@ -278,8 +282,8 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
           <section className="decision-column">
             <div className="decision-section-title">匹配依据</div>
             <div className="decision-list">
-              {confirmedEvidence.map(s => (
-                <div key={s.label} className="evidence-item">
+              {confirmedEvidence.map((s, index) => (
+                <div key={`${s.label}-${index}`} className="evidence-item">
                   <div className="evidence-line">
                     <div className="evidence-name-wrap">
                       <span className={`tier-badge tier-${s.tier}`}>{s.tier === 'strong' ? '符合' : s.tier === 'partial' ? '部分符合' : '匹配较弱'}</span>
@@ -305,8 +309,8 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
             <section className="decision-column considerations">
               <div className="decision-section-title">值得再确认</div>
               <div className="decision-list">
-                {considerationItems.map(item => (
-                  <div key={item.key} className={`consideration-item ${item.pending ? 'pending' : ''}`}>
+                {considerationItems.map((item, index) => (
+                  <div key={`${item.key}-${index}`} className={`consideration-item ${item.pending ? 'pending' : ''}`}>
                     <div className="consideration-copy">
                       <span className="consideration-name" title={item.text}>{item.text}</span>
                       <span className="consideration-note">{item.note}</span>
@@ -325,8 +329,6 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
         </div>
 
         <div className="meta-row">
-          {job.industry && <span style={{ color: 'var(--text-muted)' }}>{job.industry}</span>}
-          {job.commute && <span>通勤 {job.commute}</span>}
           <span>{job.salary}</span>
           {job.workAddress && <span>{job.workAddress}</span>}
           {job.sourceUrl ? (
@@ -347,7 +349,6 @@ function ExpandPanel({ job, open, onStartWorkflow, onOpenFollowUp, onRetry }: { 
 
         {/* ── Actions ── */}
         <div className="expand-actions">
-          <Button size="small">暂不考虑</Button>
           <Button size="small" type="primary"
             style={{ background: 'var(--indigo)', borderColor: 'var(--indigo)' }}
             onClick={() => onStartWorkflow?.(job.id)}>
@@ -495,7 +496,6 @@ function JobRow({
         <div className="r1-chevron">{!isPending && <ChevronIcon open={expanded} />}</div>
         <div className="r2-info job-company-line">
           <span>{job.company} · {job.city}</span>
-          {job.commute && <span>通勤 {job.commute}</span>}
           {job.requirements.length > 0 && <span className="kw-chip">关键词命中 {matchedRequirements}/{job.requirements.length}</span>}
         </div>
       </div>
@@ -734,6 +734,7 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
     return m ? parseInt(m[2]) : 0
   }
   const originalIdx = (id: string) => jobs.findIndex(j => j.id === id)
+  const collectedAtById = new Map(jobs.map(j => [j.id, j.collectedAt] as const))
 
   const normal = jobs.filter(j => !j.pinned).sort((a, b) => {
     // Always push pending/queued/unevaluated to bottom
@@ -745,7 +746,10 @@ export default function JobListPage({ onStartWorkflow, onOpenFollowUp, onOpenPro
 
     if (sortBy === 'score') return (b.score ?? 0) - (a.score ?? 0)
     if (sortBy === 'salary') return parseSalaryMax(b.salary) - parseSalaryMax(a.salary)
-    if (sortBy === 'time') return originalIdx(b.id) - originalIdx(a.id) // newest (highest idx) first
+    if (sortBy === 'time') {
+      const collectedCompare = (collectedAtById.get(b.id) ?? '').localeCompare(collectedAtById.get(a.id) ?? '')
+      return collectedCompare !== 0 ? collectedCompare : originalIdx(b.id) - originalIdx(a.id)
+    }
     return 0
   })
 
