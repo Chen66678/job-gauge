@@ -41,10 +41,18 @@ for (const script of ["dev", "test", "build", "check", "verify:electron", "verif
   if (!pkg.scripts?.[script]) fail(`missing script ${script}`);
 }
 if (pkg.private !== false) fail("package.json must set private=false for the open-source repository");
+if (pkg.name !== "job-gauge") fail("package.json name must be job-gauge");
+if (pkg.productName !== "JobGauge") fail("package.json productName must be JobGauge");
 if (pkg.license !== "MIT") fail("package.json must declare MIT license");
 if (!pkg.engines?.node) fail("package.json must declare a supported Node engine");
+if (pkg.repository?.url !== "git+https://github.com/Chen66678/job-gauge.git") {
+  fail("package.json repository URL must point to Chen66678/job-gauge");
+}
 
 const extensionPkg = JSON.parse(readFileSync("browser-extension/package.json", "utf8"));
+if (extensionPkg.name !== "job-gauge-browser-extension") {
+  fail("browser-extension package name must identify JobGauge");
+}
 if (extensionPkg.scripts?.postinstall !== "npm run prepare" || extensionPkg.scripts?.prepare !== "wxt prepare") {
   fail("browser-extension must generate .wxt types via prepare/postinstall");
 }
@@ -64,6 +72,10 @@ const indexHtml = readFileSync("index.html", "utf8");
 if (!indexHtml.includes("Content-Security-Policy")) {
   fail("index.html must include a Content-Security-Policy meta tag");
 }
+if (!indexHtml.includes("<title>JobGauge</title>")) fail("index.html title must be JobGauge");
+
+const extensionConfig = readFileSync("browser-extension/wxt.config.ts", "utf8");
+if (!extensionConfig.includes("name: 'JobGauge'")) fail("browser extension manifest name must be JobGauge");
 
 if (existsSync(".git")) {
   const tracked = execFileSync("git", ["ls-files"], { encoding: "utf8" }).split(/\r?\n/).filter(Boolean);

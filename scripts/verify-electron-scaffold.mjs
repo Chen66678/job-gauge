@@ -31,8 +31,12 @@ const requiredMainSnippets = [
   "isLoopbackAddress(request.socket.remoteAddress)",
   'request.headers["x-radar-token"] !== localApiToken',
   "2 * 1024 * 1024",
-  'path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "core-state.json")',
-  'path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "byok-key.enc.json")'
+  'const PUBLIC_APP_NAME = "JobGauge"',
+  'const LEGACY_RUNTIME_APP_NAME = "boss-local-job-radar"',
+  'app.setName(LEGACY_RUNTIME_APP_NAME)',
+  'app.setPath("userData", path.join(app.getPath("appData"), LEGACY_RUNTIME_APP_NAME))',
+  'path.join(app.getPath("userData"), LEGACY_DATA_DIR_NAME, "core-state.json")',
+  'path.join(app.getPath("userData"), LEGACY_DATA_DIR_NAME, "byok-key.enc.json")'
 ];
 for (const snippet of requiredMainSnippets) {
   if (!mainSource.includes(snippet)) fail(`electron/main.cjs missing ${snippet}`);

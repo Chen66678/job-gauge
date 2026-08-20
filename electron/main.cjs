@@ -20,7 +20,14 @@ const {
 
 const DEV_SERVER_URL = process.env.ELECTRON_RENDERER_URL;
 const BUILT_RENDERER_ENTRY = path.join(__dirname, "..", "dist", "index.html");
-const JOB_RADAR_DATA_DIR_NAME = "job-radar";
+const PUBLIC_APP_NAME = "JobGauge";
+// 兼容已存在的状态、配对 token 与 macOS safeStorage 密文：公开名称改为
+// JobGauge 后，运行身份和 userData 基目录仍保持首次开发版本的值。未来若迁移，
+// 必须同时迁移这三类文件和钥匙串服务，不能只改目录名。
+const LEGACY_RUNTIME_APP_NAME = "boss-local-job-radar";
+const LEGACY_DATA_DIR_NAME = "job-radar";
+app.setName(LEGACY_RUNTIME_APP_NAME);
+app.setPath("userData", path.join(app.getPath("appData"), LEGACY_RUNTIME_APP_NAME));
 const LOCAL_HOST_BIND_ADDRESS = "127.0.0.1";
 const JOB_API_PORTS = [8765, 8766, 8767];
 const jobApiState = {
@@ -140,8 +147,8 @@ function createByokSafeStorageAdapter() {
 // 后续发起的核心操作即自然取得新 client；不重建 core、不改变
 // core-state.json 的存储语义。
 function createMainCoreApi() {
-  const storage = createFileStorage(path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "core-state.json"));
-  const byokFileIO = createByokFileIO(path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "byok-key.enc.json"));
+  const storage = createFileStorage(path.join(app.getPath("userData"), LEGACY_DATA_DIR_NAME, "core-state.json"));
+  const byokFileIO = createByokFileIO(path.join(app.getPath("userData"), LEGACY_DATA_DIR_NAME, "byok-key.enc.json"));
   const byokSafeStorage = createByokSafeStorageAdapter();
 
   const initialActive = resolveActiveKeySource({
@@ -170,7 +177,7 @@ function createMainCoreApi() {
   };
 
   const localApiToken = getOrCreateLocalApiToken(
-    path.join(app.getPath("userData"), JOB_RADAR_DATA_DIR_NAME, "local-api-token.json")
+    path.join(app.getPath("userData"), LEGACY_DATA_DIR_NAME, "local-api-token.json")
   );
 
   // `client` 是构造时的快照，热替后会变陈旧；凡是需要"当前生效 client"的
@@ -427,7 +434,7 @@ function createMainWindow() {
     height: 860,
     minWidth: 960,
     minHeight: 640,
-    title: "BOSS Local Job Radar",
+    title: PUBLIC_APP_NAME,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

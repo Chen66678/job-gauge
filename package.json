@@ -1,9 +1,18 @@
 {
-  "name": "boss-local-job-radar",
+  "name": "job-gauge",
+  "productName": "JobGauge",
   "version": "0.0.1",
   "private": false,
   "license": "MIT",
-  "description": "Local-first BOSS job radar: read-only observation, local scoring, search suggestions, and tailored materials.",
+  "description": "AI-assisted job evaluation, profile fact management, targeted follow-up questions, and tailored application materials.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Chen66678/job-gauge.git"
+  },
+  "homepage": "https://github.com/Chen66678/job-gauge#readme",
+  "bugs": {
+    "url": "https://github.com/Chen66678/job-gauge/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22"

@@ -210,7 +210,7 @@ async function main(): Promise<void> {
 async function runProbeDraftMode(client: ReturnType<typeof createLlmClient>): Promise<void> {
   // 从 STATE_FILE 环境变量读路径，或用 macOS 默认路径
   const stateFilePath = process.env.STATE_FILE?.trim()
-    ?? join(homedir(), "Library", "Application Support", "BOSS Local Job Radar", "job-radar", "core-state.json");
+    ?? join(homedir(), "Library", "Application Support", "boss-local-job-radar", "job-radar", "core-state.json");
 
   printDivider("Gate2 probe-draft 模式 — 直调 orchestration 层");
   console.log(`状态文件: ${stateFilePath}`);

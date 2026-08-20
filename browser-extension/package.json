@@ -1,7 +1,9 @@
 {
-  "name": "boss-jd-reader",
+  "name": "job-gauge-browser-extension",
   "version": "1.0.0",
-  "description": "Read BOSS Zhipin job details and send to local app",
+  "description": "Read job details from BOSS Zhipin and send them to the JobGauge desktop app",
+  "license": "MIT",
+  "private": true,
   "scripts": {
     "dev": "wxt",
     "build": "wxt build",

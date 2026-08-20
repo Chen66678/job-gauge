@@ -13,7 +13,7 @@ body:
     id: proposal
     attributes:
       label: Proposed behavior
-      description: Describe the desired UX or API and how it stays within the local-first, read-only, BYOK boundaries.
+      description: Describe the desired UX or API, including any data flow or security impact.
     validations:
       required: true
   - type: textarea
@@ -23,9 +23,9 @@ body:
   - type: checkboxes
     id: boundaries
     attributes:
-      label: Boundary checks
+      label: Implementation checks
       options:
-        - label: Keeps browser collection read-only
-        - label: Does not upload resumes, jobs, or facts to a remote service
-        - label: Does not weaken BYOK / local API token handling
+        - label: Browser collection does not initiate page actions
+        - label: Any new external data transfer is explicit and documented
+        - label: Credential and local API token handling remains protected
         - label: Can be verified by unit or integration tests
