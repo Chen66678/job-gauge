@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import './FollowUpDrawer.css'
 import type { JobRequirement } from './types'
 import { errorText, unwrap } from './coreApiResult'
 import {

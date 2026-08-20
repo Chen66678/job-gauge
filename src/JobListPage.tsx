@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import './JobListPage.css'
 import { unwrap, errorText, type CoreApiResult } from './coreApiResult'
 import type { CoreState } from './domain/coreState'
 import { JobListItem } from './job-list/JobListItem'
