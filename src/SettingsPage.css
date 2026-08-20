@@ -153,8 +153,11 @@
 .settings-danger-row button { flex: 0 0 auto; }
 
 .settings-facts-card { margin-top: 20px; }
-.settings-facts-header { margin-bottom: 14px; }
+.settings-facts-header { align-items:center; margin-bottom:0; padding-bottom:0; border-bottom:0; }
+.settings-facts-header-actions { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
 .settings-fact-count { border-color: var(--gray-border); background: var(--gray-bg); color: var(--text-muted); }
+.settings-facts-toggle { min-width:92px; }
+.settings-facts-content { margin-top:16px; padding-top:16px; border-top:1px solid var(--border-hairline); }
 .settings-empty { padding: 22px 0 6px; color: var(--text-muted); font-size: 13px; text-align: center; }
 .settings-clear-trigger { margin-bottom: 12px; }
 .settings-clear-warning {

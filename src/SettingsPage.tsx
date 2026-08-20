@@ -23,6 +23,7 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
   const [editingValue, setEditingValue] = useState('')
   const [clearConfirming, setClearConfirming] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [factsExpanded, setFactsExpanded] = useState(false)
   const [autoReevaluateCount, setAutoReevaluateCount] = useState(30)
   const [reevaluationPreview, setReevaluationPreview] = useState<{ jobCount: number; modelCallCount: number } | null>(null)
 
@@ -168,52 +169,63 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
       <section className="settings-card settings-facts-card">
         <div className="settings-card-header settings-facts-header">
           <div><h2 className="settings-card-title">事实库</h2><p className="settings-card-copy">查看和维护评估时使用的个人经历与偏好事实。</p></div>
-          <span className="settings-fact-count">{facts.length} 条</span>
+          <div className="settings-facts-header-actions">
+            <span className="settings-fact-count">{facts.length} 条</span>
+            <button
+              type="button"
+              className="btn-secondary settings-facts-toggle"
+              aria-expanded={factsExpanded}
+              aria-controls="settings-fact-library-content"
+              onClick={() => setFactsExpanded(expanded => !expanded)}
+            >{factsExpanded ? '收起事实库' : '展开事实库'}</button>
+          </div>
         </div>
         {factError && <p className="settings-error">{factError}</p>}
-        {facts.length === 0 && <p className="settings-empty">暂无事实，上传简历后会自动填充。</p>}
-        {facts.length > 0 && <>
-          {!clearConfirming
-            ? <button className="btn-danger-ghost settings-clear-trigger" onClick={() => setClearConfirming(true)}>清空事实库</button>
-            : <div className="settings-clear-warning">
-                <p>清空后需重新上传简历建库，已确认的事实会全部消失。确定要清空全部 {facts.length} 条事实吗？</p>
-                <div className="settings-button-row">
-                  <button className="btn-danger-solid" onClick={() => void clearAllFacts()}>确认清空</button>
-                  <button className="btn-secondary" onClick={() => setClearConfirming(false)}>取消</button>
-                </div>
-              </div>}
-          <div className="settings-fact-list">
-            {facts.map(fact => {
-              const group = fact.groupId ? factGroups.find(candidate => candidate.id === fact.groupId) : null
-              return (
-                <div key={fact.id} className="settings-fact-row">
-                  <div className="settings-fact-body">
-                    {group && <div className="settings-fact-group">{group.label}</div>}
-                    <span className="settings-fact-category">{displayFactCategory(fact.category)}</span>
-                    <strong>{displayFactLabel(fact.label)}</strong>
-                    <span className="settings-fact-status">{FACT_STATUS_LABEL[fact.status]}</span>
-                    {editingFactId === fact.id
-                      ? <div className="settings-edit-panel">
-                          <textarea className="settings-edit-textarea" value={editingValue} onChange={event => setEditingValue(event.target.value)} rows={2} aria-label={`修改${fact.label}`} />
-                          <div className="settings-button-row">
-                            <button className="btn-secondary" onClick={() => void saveEdit(fact)}>保存</button>
-                            <button className="btn-secondary" onClick={() => { setEditingFactId(null); setEditingValue('') }}>取消</button>
-                          </div>
-                        </div>
-                      : <>
-                          {fact.summary && <div className="settings-fact-summary">{fact.summary}</div>}
-                          <div className="settings-fact-value">{fact.value}</div>
-                        </>}
+        {factsExpanded && <div id="settings-fact-library-content" className="settings-facts-content">
+          {facts.length === 0 && <p className="settings-empty">暂无事实，上传简历后会自动填充。</p>}
+          {facts.length > 0 && <>
+            {!clearConfirming
+              ? <button className="btn-danger-ghost settings-clear-trigger" onClick={() => setClearConfirming(true)}>清空事实库</button>
+              : <div className="settings-clear-warning">
+                  <p>清空后需重新上传简历建库，已确认的事实会全部消失。确定要清空全部 {facts.length} 条事实吗？</p>
+                  <div className="settings-button-row">
+                    <button className="btn-danger-solid" onClick={() => void clearAllFacts()}>确认清空</button>
+                    <button className="btn-secondary" onClick={() => setClearConfirming(false)}>取消</button>
                   </div>
-                  {editingFactId !== fact.id && <div className="settings-fact-actions">
-                    <button className="btn-secondary" onClick={() => { setEditingFactId(fact.id); setEditingValue(fact.value) }}>编辑</button>
-                    <button className="btn-danger-ghost" onClick={() => void deleteFact(fact.id)}>删除</button>
-                  </div>}
-                </div>
-              )
-            })}
-          </div>
-        </>}
+                </div>}
+            <div className="settings-fact-list">
+              {facts.map(fact => {
+                const group = fact.groupId ? factGroups.find(candidate => candidate.id === fact.groupId) : null
+                return (
+                  <div key={fact.id} className="settings-fact-row">
+                    <div className="settings-fact-body">
+                      {group && <div className="settings-fact-group">{group.label}</div>}
+                      <span className="settings-fact-category">{displayFactCategory(fact.category)}</span>
+                      <strong>{displayFactLabel(fact.label)}</strong>
+                      <span className="settings-fact-status">{FACT_STATUS_LABEL[fact.status]}</span>
+                      {editingFactId === fact.id
+                        ? <div className="settings-edit-panel">
+                            <textarea className="settings-edit-textarea" value={editingValue} onChange={event => setEditingValue(event.target.value)} rows={2} aria-label={`修改${fact.label}`} />
+                            <div className="settings-button-row">
+                              <button className="btn-secondary" onClick={() => void saveEdit(fact)}>保存</button>
+                              <button className="btn-secondary" onClick={() => { setEditingFactId(null); setEditingValue('') }}>取消</button>
+                            </div>
+                          </div>
+                        : <>
+                            {fact.summary && <div className="settings-fact-summary">{fact.summary}</div>}
+                            <div className="settings-fact-value">{fact.value}</div>
+                          </>}
+                    </div>
+                    {editingFactId !== fact.id && <div className="settings-fact-actions">
+                      <button className="btn-secondary" onClick={() => { setEditingFactId(fact.id); setEditingValue(fact.value) }}>编辑</button>
+                      <button className="btn-danger-ghost" onClick={() => void deleteFact(fact.id)}>删除</button>
+                    </div>}
+                  </div>
+                )
+              })}
+            </div>
+          </>}
+        </div>}
       </section>
     </div>
   )
