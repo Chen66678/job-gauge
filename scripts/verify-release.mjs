@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 const failures = [];
 const fail = (message) => failures.push(message);
 
-const requiredDocs = ["README.md", "SECURITY.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"];
+const requiredDocs = ["README.md", "SECURITY.md", "LICENSE", "CONTRIBUTING.md", "CHANGELOG.md"];
 const requiredReadmeAssets = [
   "docs/readme-assets/job-list.png",
   "docs/readme-assets/job-detail.png",

@@ -1,68 +1,176 @@
-# Contributing
+# 贡献指南
 
-感谢你关注 JobGauge。项目仍处于早期源码开放阶段，欢迎提交可复现的问题、界面改进和功能建议。
+感谢你关注 JobGauge。
+
+JobGauge 将简历事实、求职偏好和岗位要求放进同一条判断链路，并通过桌面应用与浏览器插件协作完成岗位导入、评估和材料生成。这里的修改不只需要“能够运行”，还需要保证事实来源可核对、评估结果可解释，以及浏览器插件不越过只读边界。
+
+贡献的核心原则是：
+
+> 解决明确的问题，用与问题规模相称的修改，并对最终提交的全部内容负责。
+
+## 开始之前
+
+下面这些修改可以直接提交 Pull Request：
+
+- 可复现且范围清晰的 Bug 修复
+- 文案、文档和类型错误
+- 不改变现有行为的小型界面修正
+- 为既有行为补充测试
+
+下面这些修改请先创建 Issue，确认需求和实现方向后再开始：
+
+- 新功能或现有功能的行为变化
+- 评分、事实状态、冲突处理或材料生成规则变化
+- 浏览器插件采集范围或与目标页面交互方式变化
+- 数据结构、IPC、核心 API 或本地存储格式变化
+- 大规模 UI 调整、架构调整或重构
+- 新增较重依赖或替换核心依赖
+
+提前讨论不是为了增加流程，而是避免实现一个项目不准备接受、或者需要用另一种方式实现的方案。
+
+## 保持修改专注
+
+一个 PR 尽量只解决一个主要问题，并且应该能用一句话说明它的目的。
+
+推荐：
+
+```text
+fix: 修复旧岗位未披露薪资时的排序错误
+```
+
+不推荐：
+
+```text
+优化岗位模块、重构状态管理、升级依赖并调整部分 UI
+```
+
+如果在修复问题时发现了值得处理的重构，请把它拆成独立 Issue 或 PR。不要顺手格式化无关文件、升级无关依赖、移动目录或改写大量相邻代码。
+
+大型 PR 并非禁止，但它的规模必须由问题本身解释。PR 描述需要说明为什么无法拆分，以及每一部分修改与目标之间的关系。
+
+## 实现原则
+
+### 保持事实链路可信
+
+- 生成内容只能使用已经确认、且可以追溯来源的事实。
+- 不要为了让评估结果更好看而伪造事实、薪资、岗位要求或匹配证据。
+- 修改事实状态、评分或材料生成逻辑时，应覆盖冲突事实、缺失信息和旧数据等边界情况。
+
+### 保持插件只读
+
+浏览器插件只读取当前岗位页面并将数据发送到本机应用。贡献不得让插件自动点击、投递、发消息、导航页面、读取 cookie，或绕过目标网站的权限和限制。
+
+如果修改岗位页面解析逻辑，请说明：
+
+- 使用了哪些页面字段或 DOM 特征
+- 页面缺少字段时如何降级
+- 在什么页面和浏览器版本中完成了验证
+
+### 简单优先
+
+- 不为只使用一次的简单逻辑增加多层 wrapper。
+- 不为“以后可能需要”提前设计没有真实使用方的扩展点。
+- 注释应解释为什么存在某个限制、兼容处理或特殊判断，而不是复述代码。
+- 新抽象应来自重复逻辑、清晰的业务含义或独立测试需求。
+
+## 使用 AI 辅助开发
+
+可以使用 Copilot、Claude、ChatGPT、Codex、Cursor 或其他工具辅助分析、编码、测试和文档工作，也不要求在 PR 中单独声明使用了什么工具。
+
+但 PR 提交者必须对最终内容负责：
+
+- 理解并能解释所有修改
+- 删除 AI 生成的无关重构、过度抽象和无意义注释
+- 核对是否误改了任务范围之外的文件
+- 不提交未经验证的代码
+- 不把真实 API Key、配对 token、简历或岗位日志交给公开仓库
+
+工具生成了代码，不代表代码已经正确，也不转移提交者的责任。
 
 ## 开发环境
 
 - Node.js 22+
 - npm 10+
 
-## 初始化
+安装依赖：
 
 ```bash
-# 仓库根目录
 npm ci
-
-# 浏览器插件
 npm --prefix browser-extension ci
 ```
 
-插件的 `postinstall` 会执行 `wxt prepare`，生成 `.wxt/` 类型文件；该目录和 `.output/` 均不提交到 Git。
-
-## 常用命令
-
-根目录：
+启动桌面应用开发环境：
 
 ```bash
-npm run dev                    # Vite 开发服务器
-npm test                       # 运行根项目测试
-npm run build                  # tsc + vite build
-npm run check                  # test + build
-npm run verify:electron
-npm run verify:browser-extension
-npm run verify:release
+# 终端 1
+npm run dev
+
+# 终端 2
+npm run electron:dev
 ```
 
-浏览器插件：
+启动浏览器插件开发环境：
 
 ```bash
 npm --prefix browser-extension run dev
-npm --prefix browser-extension run build
-npm --prefix browser-extension run zip
-npm --prefix browser-extension test
 ```
 
-## 提交约定
+插件安装依赖时会生成 `.wxt/` 类型文件，构建时会生成 `.output/`；这些目录不要提交。
 
-- 使用 `fix:`、`feat:`、`refactor:`、`chore:`、`docs:` 等 Conventional Commits 前缀。
-- 涉及行为变化时，优先补测试。
-- 提交前至少运行 `npm run check` 和 `npm run verify:release`。
+## 按修改范围验证
 
-## 安全边界
+至少运行与你的修改相关的检查：
 
-- 不要提交任何真实 API Key、配对 token、简历原文或岗位采集日志。
-- 本项目测试与构建显式使用 `envFile: false`，不会读取 `.env` / `.env.local`。
-- 浏览器插件对 BOSS 页面保持只读采集：不点击、不提交、不导航、不读取 cookie。
-- 本地 API 只绑定 `127.0.0.1`，并校验 Host、Origin、回环地址和配对 token。
+| 修改范围 | 最低验证要求 |
+| --- | --- |
+| `src/domain/` | `npm test` |
+| React 页面或样式 | `npm test`、`npm run build`，并手动检查受影响页面 |
+| `electron/` 或 preload/IPC | `npm test`、`npm run build`、`npm run verify:electron` |
+| `browser-extension/` | `npm --prefix browser-extension test`、`npm --prefix browser-extension run build`、`npm run verify:browser-extension` |
+| 依赖、构建、CI 或公开发布文件 | `npm run verify:release` |
 
-## 目录速览
+跨多个区域的修改请运行完整检查：
 
-- `src/domain/`：领域逻辑，应保持与 Electron/浏览器 API 解耦
-- `src/job-list/`：岗位列表的展示组件与视图模型；页面组件只负责状态和流程编排
-- `src/*Page.tsx`：React 页面入口；页面专属样式与入口同名并放在 `src/` 下
-- `src/index.css`：设计变量、重置、应用外壳和跨页面共享控件，不放页面专属规则
-- `electron/`：Electron 主进程、preload、图片渲染
-- `browser-extension/`：WXT 浏览器插件
-- `scripts/`：验证与评测脚本
+```bash
+npm run check
+npm --prefix browser-extension test
+npm --prefix browser-extension run build
+npm run verify:release
+```
 
-新增界面代码时，优先把可独立测试的映射逻辑放入视图模型，把重复或较重的展示块拆成组件，并将样式放在最接近使用方的位置。业务判断仍应落在 `src/domain/`，避免页面、Electron IPC 和浏览器插件各自实现一套规则。
+如果某项验证依赖你无法访问的真实页面或环境，请在 PR 中明确写出未验证的部分和原因，不要用“应该可以”代替结果。
+
+## 提交 Pull Request
+
+提交信息使用清晰的 Conventional Commits 前缀，例如：
+
+```text
+fix: 修复事实冲突采用版本后未重新评估
+feat: 增加岗位城市筛选
+refactor: 合并重复的薪资解析分支
+docs: 补充浏览器插件调试步骤
+```
+
+PR 描述至少需要说明：
+
+1. 原本存在什么问题
+2. 采用了什么解决方案
+3. 修改涉及哪些范围
+4. 运行了哪些验证，结果如何
+5. 是否包含与主要问题相关但不明显的附带修改
+
+界面修改请附截图或录屏；Bug 修复请尽可能提供复现步骤、修改前行为和修改后行为。
+
+## 提交前检查
+
+- [ ] PR 只解决一个主要问题
+- [ ] 需要讨论的修改已经在 Issue 中确认方向
+- [ ] Diff 中没有无关重构、格式化或依赖升级
+- [ ] 没有引入不必要的抽象和依赖
+- [ ] 事实链路、插件只读边界和本地数据兼容性没有被破坏
+- [ ] 没有提交真实 API Key、配对 token、简历、岗位日志或私人文件
+- [ ] 已运行与修改范围对应的测试和构建
+- [ ] 能够解释 PR 中的全部代码
+- [ ] PR 描述清楚列出了问题、方案、范围和验证结果
+
+准确的小修复、清楚的复现步骤和能够降低维护成本的改进，都比堆叠大量功能更有价值。
