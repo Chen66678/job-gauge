@@ -11,28 +11,27 @@ const SettingsPage = lazy(() => import('./SettingsPage'))
 
 type Page = 'jobs' | 'profile' | 'preferences' | 'settings' | 'onboarding' | 'customResume'
 
-// Compact, filled navigation glyphs. They are intentionally not part of the
-// usual thin-outline admin icon family: the rail should feel like a small
-// desktop tool, not a dashboard template.
 const IconList = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M5.75 4h12.5A2.75 2.75 0 0 1 21 6.75v1.5A2.75 2.75 0 0 1 18.25 11H5.75A2.75 2.75 0 0 1 3 8.25v-1.5A2.75 2.75 0 0 1 5.75 4Zm0 9h12.5A2.75 2.75 0 0 1 21 15.75v1.5A2.75 2.75 0 0 1 18.25 20H5.75A2.75 2.75 0 0 1 3 17.25v-1.5A2.75 2.75 0 0 1 5.75 13Z"/>
-    <circle cx="7" cy="7.5" r="1.25" fill="var(--nav-glyph-cutout)"/>
-    <circle cx="7" cy="16.5" r="1.25" fill="var(--nav-glyph-cutout)"/>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+    <circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" />
+    <path d="M8 6h11M8 12h11M8 18h11" />
   </svg>
 )
 
 const IconProfile = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-    <path d="M6 3h9.2L20 7.8V19a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm8 1.8V9h4.2L14 4.8ZM8.5 11a2.25 2.25 0 1 0 0-4.5 2.25 2.25 0 0 0 0 4.5Zm-2.75 5h5.5a2.75 2.75 0 0 0-5.5 0Z"/>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="8" r="3.25" />
+    <path d="M5.5 19.25c.65-3.2 3.05-5.25 6.5-5.25s5.85 2.05 6.5 5.25" />
   </svg>
 )
 
 const IconSettings = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
-    <path d="M5 7h3m5 0h6M5 17h6m5 0h3"/>
-    <circle cx="10.5" cy="7" r="2.5" fill="currentColor" stroke="none"/>
-    <circle cx="13.5" cy="17" r="2.5" fill="currentColor" stroke="none"/>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+    <path d="M4 7h5M15 7h5M4 17h8M18 17h2" />
+    <circle cx="12" cy="7" r="2.25" />
+    <circle cx="15" cy="17" r="2.25" />
   </svg>
 )
 
@@ -65,14 +64,6 @@ export default function App() {
     <div className="app-layout">
       {/* ── Sidebar ── */}
       <nav className="sidebar" aria-label="主导航">
-        <div className="sidebar-brand" aria-label="Job HQ 求职工作台">
-          <span className="sidebar-brand-mark" aria-hidden="true">J</span>
-          <span className="sidebar-brand-copy">
-            <strong>Job HQ</strong>
-            <small>求职工作台</small>
-          </span>
-        </div>
-        <div className="sidebar-section-label">工作区</div>
         <div className="sidebar-nav">
           {NAV_ITEMS.map(({ id, label, Icon }) => (
             <Tooltip key={id} title={label} placement="right" mouseEnterDelay={0.35}>

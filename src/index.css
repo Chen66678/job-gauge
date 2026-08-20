@@ -19,7 +19,6 @@
 
   --sidebar-width:184px;
   --sidebar-surface:#FFFFFF;
-  --nav-glyph-cutout:var(--sidebar-surface);
   --shadow-float:0 14px 36px rgba(32, 35, 42, 0.1);
   --shadow-card:0 1px 2px rgba(32, 35, 42, 0.05);
   --focus-ring:0 0 0 3px rgba(79, 70, 229, 0.16);
@@ -89,41 +88,8 @@ select:focus-visible { outline:none; box-shadow:var(--focus-ring); }
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  padding: 18px 12px 14px;
+  padding: 16px 12px 14px;
   z-index: 10;
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 42px;
-  padding: 0 8px;
-  margin-bottom: 24px;
-}
-.sidebar-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  border-radius: 9px;
-  background: linear-gradient(145deg, var(--indigo) 0%, var(--indigo-deep) 100%);
-  color: #fff;
-  font-size: 17px;
-  font-weight: 750;
-  box-shadow: 0 5px 12px rgba(79, 70, 229, 0.2);
-}
-.sidebar-brand-copy { display: flex; flex-direction: column; min-width: 0; }
-.sidebar-brand-copy strong { color: var(--text-primary); font-size: 14px; line-height: 18px; letter-spacing: -.01em; }
-.sidebar-brand-copy small { margin-top: 1px; color: var(--text-muted); font-size: 11px; line-height: 15px; }
-.sidebar-section-label {
-  padding: 0 10px;
-  margin-bottom: 7px;
-  color: var(--gray-disabled);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .12em;
 }
 
 .sidebar-nav,
@@ -139,7 +105,6 @@ select:focus-visible { outline:none; box-shadow:var(--focus-ring); }
 .sidebar-bottom { padding-top: 12px; border-top: 1px solid var(--border-hairline); }
 
 .nav-item {
-  --nav-glyph-cutout: var(--sidebar-surface);
   position: relative;
   width: 100%;
   min-height: 40px;
@@ -164,7 +129,6 @@ select:focus-visible { outline:none; box-shadow:var(--focus-ring); }
 .nav-item:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .nav-item.active {
-  --nav-glyph-cutout: var(--indigo-bg);
   color: var(--indigo);
   background: var(--indigo-bg);
   border-color: var(--indigo-border);
