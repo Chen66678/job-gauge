@@ -7,28 +7,30 @@
   --yellow-text:#B45309; --yellow-icon:#D97706; --yellow-bg:#FFFBEB; --yellow-border:#FEF3C7;
   --gray:#6B7280; --gray-bg:#F3F4F6; --gray-border:#E5E7EB;
   --text-primary:#111827; --text-secondary:#374151; --text-muted:#5B6270;
-  --border-hairline:#EDEEF1; --page-bg:#FAFAFA; --card-bg:#FFFFFF;
+  --border-hairline:#E7E9EE; --page-bg:#F7F8FA; --card-bg:#FFFFFF;
   --indigo-deep:#4338CA; --gray-line:#D1D5DB; --gray-tertiary:#4B5563; --gray-disabled:#9CA3AF;
   --border-control:#6B7280;
   --red-deep:#991B1B; --green-deep:#166534; --amber-deep:#92400E; --orange-line:#FED7AA;
   --indigo-light:#A5B4FC; --green-hover-bg:#E7FBEE; --green-hover-border:#BBF7D0; --surface-dark:#111827;
-  --r-sm:4px; --r-md:6px; --r-lg:8px; --r-card:12px;
+  --r-sm:4px; --r-md:7px; --r-lg:9px; --r-card:12px;
   --fs-resume-name:24px; --fs-score-lg:24px; --fs-score:22px; --fs-h1:18px; --fs-job-title:16px;
   --fs-title:15px; --fs-body-lg:14px; --fs-body:13px; --fs-aux:12px; --fs-aux-sm:11px; --fs-micro:10px;
   --btn-h:32px; --btn-h-lg:36px;
 
-  --sidebar-width:112px;
-  --sidebar-surface:#f7f8fa;
+  --sidebar-width:184px;
+  --sidebar-surface:#FFFFFF;
   --nav-glyph-cutout:var(--sidebar-surface);
-  --shadow-float:0 10px 30px rgba(32, 35, 42, 0.08);
-  --shadow-card:0 1px 3px rgba(32, 35, 42, 0.08);
+  --shadow-float:0 14px 36px rgba(32, 35, 42, 0.1);
+  --shadow-card:0 1px 2px rgba(32, 35, 42, 0.05);
+  --focus-ring:0 0 0 3px rgba(79, 70, 229, 0.16);
   --font:-apple-system, 'PingFang SC', 'Helvetica Neue', sans-serif;
 }
 
 /* ─── Reset ─────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
+button { -webkit-tap-highlight-color: transparent; }
 body {
   min-width: 820px;
   font-family: var(--font);
@@ -40,11 +42,36 @@ body {
 }
 
 /* ─── Global buttons ───────────────────────────────────────── */
-.primary-button,.text-button{border:1px solid var(--gray-border);border-radius:7px;padding:8px 14px;background:var(--card-bg);color:var(--text-primary);cursor:pointer}
-.primary-button{background:var(--indigo);border-color:var(--indigo);color:var(--card-bg)}
-.text-button{border:0;background:transparent;color:var(--indigo);padding:6px}
-.primary-button:hover{background:var(--indigo-deep);border-color:var(--indigo-deep)}
-.text-button:hover{background:var(--gray-bg)}
+.primary-button,
+.text-button,
+.btn-secondary,
+.btn-danger-ghost,
+.btn-danger-solid {
+  min-height: 34px;
+  border-radius: var(--r-md);
+  padding: 7px 13px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease;
+}
+.primary-button { border:1px solid var(--indigo); background:var(--indigo); color:#fff; }
+.primary-button:hover { background:var(--indigo-deep); border-color:var(--indigo-deep); }
+.text-button { min-height:30px; border:0; background:transparent; color:var(--indigo); padding:6px 8px; }
+.text-button:hover { background:var(--indigo-bg); }
+.primary-button:active,
+.btn-secondary:active,
+.btn-danger-ghost:active,
+.btn-danger-solid:active { transform:translateY(1px); }
+.primary-button:focus-visible,
+.text-button:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger-ghost:focus-visible,
+.btn-danger-solid:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible { outline:none; box-shadow:var(--focus-ring); }
 
 /* ─── App shell ─────────────────────────────────────────────── */
 .app-layout {
@@ -645,12 +672,17 @@ body {
 
 
 /* ─── Shared control styles ─────────────────────────────────── */
-.btn-secondary { border:1px solid var(--gray-border); border-radius:7px; padding:7px 12px; background:var(--card-bg); color:var(--text-primary); cursor:pointer; font-size:13px; }
-.btn-secondary:hover { border-color:var(--indigo); color:var(--indigo); }
-.btn-danger-ghost { border:1px solid var(--red-border); border-radius:7px; padding:7px 12px; background:var(--red-bg); color:var(--red-deep); cursor:pointer; font-size:13px; }
-.btn-danger-ghost:hover { border-color:var(--red); }
-.btn-danger-solid { border:1px solid var(--red-deep); border-radius:7px; padding:7px 12px; background:var(--red-deep); color:#fff; cursor:pointer; font-size:13px; }
+.btn-secondary { border:1px solid var(--gray-border); background:var(--card-bg); color:var(--text-secondary); }
+.btn-secondary:hover { border-color:var(--indigo-light); background:var(--indigo-bg); color:var(--indigo-deep); }
+.btn-danger-ghost { border:1px solid var(--red-border); background:var(--card-bg); color:var(--red-deep); }
+.btn-danger-ghost:hover { border-color:#FCA5A5; background:var(--red-bg); }
+.btn-danger-solid { border:1px solid var(--red-deep); background:var(--red-deep); color:#fff; }
 .btn-danger-solid:hover { background:var(--red); border-color:var(--red); }
+.primary-button:disabled,
+.btn-secondary:disabled,
+.btn-danger-ghost:disabled,
+.btn-danger-solid:disabled,
+.text-button:disabled { opacity:.52; cursor:not-allowed; transform:none; }
 
 .clear-jobs-confirm { display:flex; flex-direction:column; gap:8px; padding:8px 12px; border:1px solid var(--red-border); border-radius:8px; background:var(--red-bg); }
 .clear-jobs-confirm p { color:var(--red-deep); margin:0; font-size:13px; }
