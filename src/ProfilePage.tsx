@@ -4,28 +4,13 @@ import type { WorkflowApi, WorkflowState } from './workflowApi'
 import { unwrap, errorText as formatError } from './coreApiResult'
 import { extractPdfResume, isPdfFile } from './domain/pdfResume'
 import { readCachedResumeFollowUps, writeCachedResumeFollowUps } from './resumeFollowUpCache'
+import { displayFactCategory, displayFactLabel } from './factPresentation'
 import FollowUpDrawer from './FollowUpDrawer'
 import './ProfilePage.css'
 
 type ResumeInput = { kind: 'text'; resumeText: string }
 type UndoState = { factId: string; previousStatus: FactStatus } | null
 const DEFAULT_FACT_CATEGORIES = ['工作经历', '技能', '教育', '偏好']
-const FACT_LABEL_ALIASES: Record<string, string> = {
-  'personal information': '个人信息',
-  'personal info': '个人信息',
-  'job search intent': '求职意向',
-  'work experience': '工作经历',
-  'project experience': '项目经历',
-  education: '教育经历',
-  skill: '技能',
-  skills: '技能',
-}
-
-function displayFactLabel(label: string) {
-  const trimmed = label.trim()
-  return FACT_LABEL_ALIASES[trimmed.toLowerCase()] ?? trimmed
-}
-
 function displayConflictLabel(facts: ProfileFact[]) {
   return [...new Set(facts.map(fact => displayFactLabel(fact.label)).filter(Boolean))].join('、') || '同一事实'
 }
@@ -266,7 +251,7 @@ export default function ProfilePage() {
           <div className="fact-group-tag">{factGroupsById.get(fact.groupId)!.label}</div>
         )}
         <div className="fact-top">
-          <span className="fact-label">{fact.label}</span>
+          <span className="fact-label">{displayFactLabel(fact.label)}</span>
           <span className={`src-badge src-${fact.sourceType}`}>{sourceLabel(fact.sourceType)}</span>
           {fact.confidence < 0.7 && <span className="low-conf"><WarningIcon />提取可信度较低，请仔细确认</span>}
         </div>
@@ -305,7 +290,7 @@ export default function ProfilePage() {
       </div>
     })}</div>}
     {unconfirmedFacts.length > 0 && <div className="status-bar"><div className="sb-icon"><ClockIcon /></div><div className="sb-text"><div className="sb-count">待确认 <b>{unconfirmedFacts.length}</b> 条事实</div><div className="sb-hint">确认完成后评估更准确——无需全部确认，随时可继续</div></div><button className="btn-batch" onClick={confirmAll}><CheckIcon />全部确认</button></div>}
-    {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{category}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
+    {Object.entries(groupedFacts).map(([category, categoryFacts]) => <div key={category}><div className="section-head fact-group-head"><span className="dot" /><span className="section-title">{displayFactCategory(category)}</span><span className="section-count">{categoryFacts.length} 条待确认</span></div>{categoryFacts.map(fact => factCard(fact))}</div>)}
     {facts.length === 0 && !parsing && !parseError && <div className="empty-state facts-empty"><div className="empty-title">还没有可确认的事实</div><div className="empty-sub">上传并解析简历后，事实会按类别展示在这里。</div></div>}
     {!manualAddOpen ? <button className="manual-add" type="button" onClick={() => { setManualCategory(selectedManualCategory); setManualAddOpen(true) }}><span className="ma-icon">+</span><span className="ma-body"><span className="ma-title">手动添加事实</span><span className="ma-sub">手动录入的事实直接标记为已确认，参与后续评估</span></span></button> : <form className="manual-add manual-add-form" onSubmit={event => { event.preventDefault(); submitManualFact() }}><div className="manual-field"><label htmlFor="manual-fact-content">事实内容</label><textarea id="manual-fact-content" className="manual-control manual-textarea" value={manualContent} onChange={event => setManualContent(event.target.value)} placeholder="例如：主导过日活百万级产品的性能优化" /></div><div className="manual-field"><label htmlFor="manual-fact-category">类别</label><select id="manual-fact-category" className="manual-control" value={selectedManualCategory} onChange={event => setManualCategory(event.target.value)}>{availableCategories.map(category => <option key={category} value={category}>{category}</option>)}</select></div><div className="manual-actions"><button className="primary-button" type="submit" disabled={!manualContent.trim() || manualSubmitting}>{manualSubmitting ? '添加中…' : '添加'}</button><button className="text-button" type="button" onClick={() => { setManualAddOpen(false); setManualContent('') }} disabled={manualSubmitting}>取消</button></div></form>}
     {processedFacts.length > 0 && <div className="processed-section"><button className="processed-toggle" onClick={() => setProcessedOpen(open => !open)}>{processedOpen ? '⌄' : '›'} 已处理事实（{processedFacts.length}）</button>{processedOpen && <div className="processed-list">{processedFacts.map(fact => factCard(fact, true))}</div>}</div>}

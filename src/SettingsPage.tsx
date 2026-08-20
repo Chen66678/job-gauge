@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { FactStatus, ProfileFact } from './types'
 import { unwrap, errorText as formatError } from './coreApiResult'
+import { displayFactCategory, displayFactLabel } from './factPresentation'
 import './SettingsPage.css'
 
 const FACT_STATUS_LABEL: Record<FactStatus, string> = {
@@ -188,8 +189,8 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
                 <div key={fact.id} className="settings-fact-row">
                   <div className="settings-fact-body">
                     {group && <div className="settings-fact-group">{group.label}</div>}
-                    <span className="settings-fact-category">{fact.category}</span>
-                    <strong>{fact.label}</strong>
+                    <span className="settings-fact-category">{displayFactCategory(fact.category)}</span>
+                    <strong>{displayFactLabel(fact.label)}</strong>
                     <span className="settings-fact-status">{FACT_STATUS_LABEL[fact.status]}</span>
                     {editingFactId === fact.id
                       ? <div className="settings-edit-panel">
