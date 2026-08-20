@@ -106,38 +106,71 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
 
   return (
     <div className="settings-page">
-      <h1 className="settings-title">设置</h1>
-      <p className="settings-subtitle">管理求职偏好和安装引导。</p>
-      <div className="settings-actions">
-        <button className="btn-secondary" onClick={onOpenPreferences}>偏好设置</button>
-        <button className="btn-secondary" onClick={onOpenOnboarding}>重新打开安装引导</button>
-        <button className="btn-danger-ghost" disabled={clearing} onClick={() => void clearKey()}>{clearing ? '清除中…' : '清除本地 API Key'}</button>
-      </div>
-      {message && <p className="settings-message">{message}</p>}
+      <header className="settings-header">
+        <div>
+          <p className="settings-eyebrow">工作台配置</p>
+          <h1 className="settings-title">设置</h1>
+          <p className="settings-subtitle">管理评估偏好、本地连接和事实数据。</p>
+        </div>
+      </header>
 
-      <div className="settings-card">
-        <h2 className="settings-card-title">自动重评范围</h2>
-        <p className="settings-card-copy">简历或偏好保存后，自动重评最近采集的 N 条岗位；置顶岗位始终会重评。范围外岗位会标记为评分已过期。</p>
-        <label>自动重评最近 <input className="settings-input settings-number-input" aria-label="自动重评最近 N 条" type="number" min="0" value={autoReevaluateCount} onChange={event => setAutoReevaluateCount(Number(event.target.value))} /> 条</label>
-        <div className="settings-button-row">
-          <button className="btn-secondary" onClick={() => void saveAutoReevaluateCount()}>保存</button>
-          <button className="btn-secondary" onClick={() => void previewRecentReevaluation()}>查看调用预估</button>
+      <section className="settings-shortcuts" aria-label="常用设置">
+        <button className="settings-shortcut" onClick={onOpenPreferences}>
+          <span className="settings-shortcut-icon" aria-hidden="true">偏</span>
+          <span><strong>偏好设置</strong><small>目标方向、城市、薪资与排除项</small></span>
+          <span className="settings-shortcut-arrow" aria-hidden="true">›</span>
+        </button>
+        <button className="settings-shortcut" onClick={onOpenOnboarding}>
+          <span className="settings-shortcut-icon" aria-hidden="true">引</span>
+          <span><strong>安装引导</strong><small>重新查看插件安装与首次导入流程</small></span>
+          <span className="settings-shortcut-arrow" aria-hidden="true">›</span>
+        </button>
+      </section>
+
+      {message && <p className="settings-message" role="status">{message}</p>}
+
+      <section className="settings-card">
+        <div className="settings-card-header">
+          <div><h2 className="settings-card-title">自动重评范围</h2><p className="settings-card-copy">控制资料变化后自动更新多少条最近岗位，置顶岗位始终会重评。</p></div>
+          <span className="settings-card-kicker">评估</span>
+        </div>
+        <div className="settings-inline-control">
+          <label htmlFor="auto-reevaluate-count">自动重评最近</label>
+          <input id="auto-reevaluate-count" className="settings-input settings-number-input" aria-label="自动重评最近 N 条" type="number" min="0" value={autoReevaluateCount} onChange={event => setAutoReevaluateCount(Number(event.target.value))} />
+          <span>条岗位</span>
+          <div className="settings-button-row">
+            <button className="primary-button" onClick={() => void saveAutoReevaluateCount()}>保存范围</button>
+            <button className="btn-secondary" onClick={() => void previewRecentReevaluation()}>查看调用预估</button>
+          </div>
         </div>
         {reevaluationPreview && <p className="settings-preview">下次自动重评会处理 {reevaluationPreview.jobCount} 条岗位，预计消耗 {reevaluationPreview.modelCallCount} 次模型调用。</p>}
-      </div>
+      </section>
 
-      <div className="settings-card">
-        <p className="settings-token-label">本地插件配对 token</p>
-        <input className="settings-input settings-token-input" readOnly type={showToken ? 'text' : 'password'} value={localApiToken ?? ''} />
-        <button className="btn-secondary" disabled={!localApiToken} onClick={() => setShowToken(value => !value)}>{showToken ? '遮罩' : '显示'}</button>
-        <button className="btn-secondary" disabled={!localApiToken} onClick={() => void copyToken()}>{copyStatus === 'copied' ? '已复制' : '复制'}</button>
-        <p className="settings-help-text">粘贴到浏览器插件设置以授权岗位导入</p>
-      </div>
+      <section className="settings-card">
+        <div className="settings-card-header">
+          <div><h2 className="settings-card-title">本地连接</h2><p className="settings-card-copy">浏览器插件通过本机 token 与工作台配对，信息不会发送到第三方服务器。</p></div>
+          <span className="settings-card-kicker">插件</span>
+        </div>
+        <label className="settings-field-label" htmlFor="local-pairing-token">本地插件配对 token</label>
+        <div className="settings-token-control">
+          <input id="local-pairing-token" className="settings-input settings-token-input" readOnly type={showToken ? 'text' : 'password'} value={localApiToken ?? ''} />
+          <button className="btn-secondary" disabled={!localApiToken} onClick={() => setShowToken(value => !value)}>{showToken ? '遮罩' : '显示'}</button>
+          <button className="btn-secondary" disabled={!localApiToken} onClick={() => void copyToken()}>{copyStatus === 'copied' ? '已复制' : '复制'}</button>
+        </div>
+        <p className="settings-help-text">粘贴到浏览器插件设置页，即可授权岗位导入。</p>
+        <div className="settings-danger-row">
+          <div><strong>本地 API Key</strong><p>清除后，模型相关功能会暂停，重新配置后可恢复。</p></div>
+          <button className="btn-danger-ghost" disabled={clearing} onClick={() => void clearKey()}>{clearing ? '清除中…' : '清除本地 API Key'}</button>
+        </div>
+      </section>
 
-      <div className="settings-section">
-        <h2 className="settings-section-title">事实库</h2>
+      <section className="settings-card settings-facts-card">
+        <div className="settings-card-header settings-facts-header">
+          <div><h2 className="settings-card-title">事实库</h2><p className="settings-card-copy">查看和维护评估时使用的个人经历与偏好事实。</p></div>
+          <span className="settings-fact-count">{facts.length} 条</span>
+        </div>
         {factError && <p className="settings-error">{factError}</p>}
-        {facts.length === 0 && <p>暂无事实，上传简历后自动填充。</p>}
+        {facts.length === 0 && <p className="settings-empty">暂无事实，上传简历后会自动填充。</p>}
         {facts.length > 0 && <>
           {!clearConfirming
             ? <button className="btn-danger-ghost settings-clear-trigger" onClick={() => setClearConfirming(true)}>清空事实库</button>
@@ -180,7 +213,7 @@ export default function SettingsPage({ onOpenPreferences, onOpenOnboarding }: { 
             })}
           </div>
         </>}
-      </div>
+      </section>
     </div>
   )
 }
