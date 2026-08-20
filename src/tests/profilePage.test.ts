@@ -161,6 +161,25 @@ describe('ProfilePage fact conflicts', () => {
     expect(screen.queryByText('两条描述指向同一职责但细节冲突')).toBeNull()
   })
 
+  it('normalizes equivalent English and Chinese fact labels in the conflict title', async () => {
+    const state = {
+      factLibrary: [
+        { id: 'fact-1', category: '基本信息', label: 'personal information', value: '19 岁', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+        { id: 'fact-2', category: '基本信息', label: '个人信息', value: '20 岁', sourceType: 'resume', sourceRef: 'resume_text', status: 'confirmed', confidence: 0.9 },
+      ],
+      factConflicts: [
+        { id: 'conflict-1', factIds: ['fact-1', 'fact-2'], rationale: '年龄冲突', detectedAt: '2026-08-01T00:00:00.000Z' },
+      ],
+      jobs: [],
+    } as unknown as WorkflowState
+    buildApi({ getState: vi.fn(async () => state) })
+
+    render(createElement(ProfilePage))
+
+    expect(await screen.findByText('检测到「个人信息」存在 2 个版本，请选择正确版本')).not.toBeNull()
+    expect(screen.queryByText(/personal information、个人信息/)).toBeNull()
+  })
+
   it('calls dismissFactConflict and refreshes state when the user clicks the dismiss action', async () => {
     const state = {
       factLibrary: [

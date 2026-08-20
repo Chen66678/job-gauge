@@ -10,6 +10,25 @@ import './ProfilePage.css'
 type ResumeInput = { kind: 'text'; resumeText: string }
 type UndoState = { factId: string; previousStatus: FactStatus } | null
 const DEFAULT_FACT_CATEGORIES = ['工作经历', '技能', '教育', '偏好']
+const FACT_LABEL_ALIASES: Record<string, string> = {
+  'personal information': '个人信息',
+  'personal info': '个人信息',
+  'job search intent': '求职意向',
+  'work experience': '工作经历',
+  'project experience': '项目经历',
+  education: '教育经历',
+  skill: '技能',
+  skills: '技能',
+}
+
+function displayFactLabel(label: string) {
+  const trimmed = label.trim()
+  return FACT_LABEL_ALIASES[trimmed.toLowerCase()] ?? trimmed
+}
+
+function displayConflictLabel(facts: ProfileFact[]) {
+  return [...new Set(facts.map(fact => displayFactLabel(fact.label)).filter(Boolean))].join('、') || '同一事实'
+}
 
 function sourceLabel(sourceType: ProfileFact['sourceType']) {
   return sourceType === 'resume' ? '简历解析' : sourceType === 'user_answer' ? '反问补充' : '手动添加'
@@ -275,12 +294,12 @@ export default function ProfilePage() {
     <div className="section-head"><span className="dot d-indigo" /><span className="section-title">事实库</span></div>
     {factConflicts.length > 0 && <div className="conflict-section">{factConflicts.map(conflict => {
       const conflictFacts = conflict.factIds.map(factId => factsById.get(factId)).filter((fact): fact is ProfileFact => !!fact)
-      const conflictLabel = [...new Set(conflictFacts.map(fact => fact.label))].join('、') || '同一事实'
+      const conflictLabel = displayConflictLabel(conflictFacts)
       return <div className="conflict-card" key={conflict.id}>
         <div className="conflict-title"><WarningIcon />检测到「{conflictLabel}」存在 {conflict.factIds.length} 个版本，请选择正确版本</div>
         <div className="conflict-versions">{conflictFacts.map(fact => <div className="conflict-version" key={fact.id}>
           <div className="conflict-version-copy"><span className={`src-badge src-${fact.sourceType}`}>{sourceLabel(fact.sourceType)}</span><p>{fact.value}</p></div>
-          <button className="text-button" onClick={() => resolveConflict(conflict.id, fact.id)}>采用此版本</button>
+          <button className="btn-secondary conflict-version-select" onClick={() => resolveConflict(conflict.id, fact.id)}>采用此版本</button>
         </div>)}</div>
         <div className="conflict-actions"><button className="text-button" onClick={() => dismissConflict(conflict.id)}>暂时忽略</button></div>
       </div>
