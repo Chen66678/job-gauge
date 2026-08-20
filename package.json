@@ -17,7 +17,7 @@
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
     "check": "npm run test && npm run build",
-    "verify:electron": "node scripts/verify-electron-scaffold.mjs",
+    "verify:electron": "node scripts/verify-electron-scaffold.mjs && node scripts/verify-electron-ipc-policy.mjs",
     "verify:browser-extension": "node scripts/verify-browser-extension-readonly-boundary.mjs",
     "verify:release": "npm run verify:electron && npm run verify:browser-extension && node scripts/verify-release.mjs"
   },

@@ -9,6 +9,7 @@ const { createResumeImageRenderer } = require("./resumeImageRenderer.cjs");
 const { createLlmClient } = require("../src/domain/llmClient.ts");
 const { parseSalaryText } = require("../src/domain/jobSalary.ts");
 const { CORE_STATE_STORAGE_KEY } = require("../src/domain/coreState.ts");
+const { shouldBroadcastCoreApiMethod } = require("./coreApiIpcPolicy.cjs");
 const {
   saveAndVerifyByokKey: saveAndVerifyByokKeyImpl,
   getByokKeyStatus: getByokKeyStatusImpl,
@@ -215,7 +216,7 @@ function registerCoreApiHandlers(core) {
     ipcMain.handle(`coreApi:${methodName}`, async (_event, ...args) => {
       try {
         const result = await handler(...args);
-        broadcastState(core);
+        if (shouldBroadcastCoreApiMethod(methodName)) broadcastState(core);
         return result;
       } catch (error) {
         return { error: error instanceof Error ? error.message : String(error) };
