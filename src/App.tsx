@@ -55,18 +55,32 @@ export default function App() {
     setFollowUpJobId(jobId)
   }
 
+  const isNavActive = (id: Page) => {
+    if (id === 'jobs') return page === 'jobs' || page === 'customResume'
+    if (id === 'settings') return page === 'settings' || page === 'preferences' || page === 'onboarding'
+    return page === id
+  }
+
   return (
     <div className="app-layout">
       {/* ── Sidebar ── */}
       <nav className="sidebar" aria-label="主导航">
+        <div className="sidebar-brand" aria-label="Job HQ 求职工作台">
+          <span className="sidebar-brand-mark" aria-hidden="true">J</span>
+          <span className="sidebar-brand-copy">
+            <strong>Job HQ</strong>
+            <small>求职工作台</small>
+          </span>
+        </div>
+        <div className="sidebar-section-label">工作区</div>
         <div className="sidebar-nav">
           {NAV_ITEMS.map(({ id, label, Icon }) => (
             <Tooltip key={id} title={label} placement="right" mouseEnterDelay={0.35}>
               <button
-                className={`nav-item ${page === id ? 'active' : ''}`}
+                className={`nav-item ${isNavActive(id) ? 'active' : ''}`}
                 onClick={() => setPage(id)}
                 aria-label={label}
-                aria-current={page === id ? 'page' : undefined}
+                aria-current={isNavActive(id) ? 'page' : undefined}
               >
                 <Icon />
                 <span className="nav-item-label">{label}</span>
@@ -78,9 +92,9 @@ export default function App() {
         <div className="sidebar-bottom">
           <Tooltip title="设置" placement="right" mouseEnterDelay={0.35}>
             <button
-              className={`nav-item ${page === 'settings' ? 'active' : ''}`}
+              className={`nav-item ${isNavActive('settings') ? 'active' : ''}`}
               aria-label="设置"
-              aria-current={page === 'settings' ? 'page' : undefined}
+              aria-current={isNavActive('settings') ? 'page' : undefined}
               onClick={() => setPage('settings')}
             >
               <IconSettings />
