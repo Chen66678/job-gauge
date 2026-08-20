@@ -18,7 +18,7 @@
 }
 
 .cr-header { display: flex; align-items: flex-start; gap: 22px; margin-bottom: 22px; }
-.cr-header h1 { margin: 3px 0 0; font-size: clamp(28px, 4vw, 38px); line-height: 1.15; letter-spacing: -0.03em; }
+.cr-header h1 { margin: 3px 0 0; font-size: clamp(24px, 3vw, 28px); line-height: 1.2; letter-spacing: -0.025em; }
 .cr-back { margin-top: 2px; white-space: nowrap; }
 .cr-eyebrow { margin: 0; color: var(--text-muted); font-size: 12px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
 

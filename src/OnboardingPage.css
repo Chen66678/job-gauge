@@ -5,7 +5,7 @@
 /* Gate 1 preferences alignment */
 .preferences-shell { width:min(100%, 760px); box-shadow:none; }
 .page-title { padding-bottom:16px; border-bottom:1px solid var(--border-hairline); }
-.page-title h1 { font-size:18px; line-height:24px; font-weight:600; }
+.page-title h1 { font-size:24px; line-height:32px; font-weight:700; letter-spacing:-.02em; }
 .preferences-back { margin-bottom:10px; padding:0; border:0; background:transparent; color:var(--indigo); cursor:pointer; font-size:13px; }
 .preferences-input { min-height:96px; padding:12px 16px; border-radius:8px; }
 
