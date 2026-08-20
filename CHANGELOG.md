@@ -9,3 +9,5 @@
 - WXT browser extension for read-only BOSS Zhipin job collection.
 - Unit tests for domain logic and major React pages.
 - Release verification scripts for Electron scaffold, browser extension boundary, and repository release gate.
+- Renderer IPC queries no longer rebroadcast unchanged state, preventing the idle job-list CPU loop.
+- Root and browser-extension dependency trees updated to resolve the initial source release security audit findings.
