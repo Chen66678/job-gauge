@@ -58,7 +58,11 @@ npm --prefix browser-extension test
 ## 目录速览
 
 - `src/domain/`：领域逻辑，应保持与 Electron/浏览器 API 解耦
-- `src/`：React 渲染层
+- `src/job-list/`：岗位列表的展示组件与视图模型；页面组件只负责状态和流程编排
+- `src/*Page.tsx`：React 页面入口；页面专属样式与入口同名并放在 `src/` 下
+- `src/index.css`：设计变量、重置、应用外壳和跨页面共享控件，不放页面专属规则
 - `electron/`：Electron 主进程、preload、图片渲染
 - `browser-extension/`：WXT 浏览器插件
 - `scripts/`：验证与评测脚本
+
+新增界面代码时，优先把可独立测试的映射逻辑放入视图模型，把重复或较重的展示块拆成组件，并将样式放在最接近使用方的位置。业务判断仍应落在 `src/domain/`，避免页面、Electron IPC 和浏览器插件各自实现一套规则。
