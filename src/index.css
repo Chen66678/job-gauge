@@ -725,3 +725,37 @@ select:focus-visible { outline:none; box-shadow:var(--focus-ring); }
 .clear-jobs-confirm p { color:var(--red-deep); margin:0; font-size:13px; }
 .clear-jobs-confirm .clear-jobs-error { color:var(--red-deep); font-size:12px; }
 .clear-jobs-confirm-actions { display:flex; gap:8px; }
+
+.reevaluation-prompt {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  margin:8px 14px 12px;
+  padding:11px 12px;
+  border:1px solid var(--green-border);
+  border-radius:var(--r-lg);
+  background:var(--green-bg);
+  color:var(--green-deep);
+  font-size:13px;
+}
+.reevaluation-prompt-copy { display:flex; align-items:center; gap:9px; min-width:0; line-height:20px; }
+.reevaluation-prompt-icon {
+  display:grid;
+  place-items:center;
+  width:22px;
+  height:22px;
+  flex:0 0 22px;
+  border-radius:50%;
+  background:var(--green-icon);
+  color:#fff;
+  font-size:12px;
+  font-weight:700;
+}
+.reevaluation-prompt-actions { display:flex; align-items:center; gap:7px; flex:0 0 auto; }
+.reevaluation-prompt .primary-button { background:var(--green-deep); border-color:var(--green-deep); }
+.reevaluation-prompt .primary-button:hover { background:var(--green-text); border-color:var(--green-text); }
+@media (max-width:900px) {
+  .reevaluation-prompt { align-items:flex-start; flex-direction:column; }
+  .reevaluation-prompt-actions { padding-left:31px; }
+}

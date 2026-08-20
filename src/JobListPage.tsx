@@ -421,10 +421,15 @@ function JobRow({
       </div>
 
       {canPromptReevaluation && (
-        <div style={{ margin: '8px 0 0', padding: '10px 12px', border: '1px solid var(--green-border)', borderRadius: 6, background: 'var(--green-bg)', color: 'var(--green-text)', fontSize: 13 }}>
-          ✓ 已确认来自「{job.title}」的 {followUpFacts.length} 条新事实，是否重新评估该岗位？
-          <button type="button" onClick={() => onReevaluate(job.id)} style={{ marginLeft: 10 }}>立刻重评</button>
-          <button type="button" onClick={() => onDeferReevaluation(job.id)} style={{ marginLeft: 8 }}>稍后再说</button>
+        <div className="reevaluation-prompt" role="status">
+          <div className="reevaluation-prompt-copy">
+            <span className="reevaluation-prompt-icon" aria-hidden="true">✓</span>
+            <span>已确认来自「{job.title}」的 {followUpFacts.length} 条新事实，是否重新评估该岗位？</span>
+          </div>
+          <div className="reevaluation-prompt-actions">
+            <button type="button" className="primary-button" onClick={() => onReevaluate(job.id)}>立刻重评</button>
+            <button type="button" className="btn-secondary" onClick={() => onDeferReevaluation(job.id)}>稍后再说</button>
+          </div>
         </div>
       )}
 
