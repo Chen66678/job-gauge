@@ -5,6 +5,13 @@ const failures = [];
 const fail = (message) => failures.push(message);
 
 const requiredDocs = ["README.md", "SECURITY.md", "LICENSE", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "CHANGELOG.md"];
+const requiredReadmeAssets = [
+  "docs/readme-assets/job-list.png",
+  "docs/readme-assets/job-detail.png",
+  "docs/readme-assets/fact-conflict.png",
+  "docs/readme-assets/custom-resume.png"
+];
+const expectedReadmeAssetSize = { width: 1600, height: 1050 };
 const requiredCodeFiles = [
   "index.html",
   "package.json",
@@ -30,6 +37,27 @@ for (const file of requiredDocs) {
     continue;
   }
   if (readFileSync(file, "utf8").trim().length === 0) fail(`${file} is empty`);
+}
+
+const readme = readFileSync("README.md", "utf8");
+for (const file of requiredReadmeAssets) {
+  if (!existsSync(file)) {
+    fail(`missing ${file}`);
+    continue;
+  }
+  if (!readme.includes(file)) fail(`README.md must reference ${file}`);
+
+  const png = readFileSync(file);
+  const isPng = png.length >= 24 && png.subarray(0, 8).toString("hex") === "89504e470d0a1a0a";
+  if (!isPng) {
+    fail(`${file} must be a valid PNG`);
+    continue;
+  }
+  const width = png.readUInt32BE(16);
+  const height = png.readUInt32BE(20);
+  if (width !== expectedReadmeAssetSize.width || height !== expectedReadmeAssetSize.height) {
+    fail(`${file} must be ${expectedReadmeAssetSize.width}x${expectedReadmeAssetSize.height}, received ${width}x${height}`);
+  }
 }
 
 for (const file of requiredCodeFiles) {
